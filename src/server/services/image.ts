@@ -137,7 +137,7 @@ export class SharpImageProcessor implements ImageProcessor {
     const base = sharp(
       Buffer.from(
         garmentSvgString(
-          input.product.category,
+          input.product.silhouette,
           input.hex,
           MOCKUP_W,
           MOCKUP_H,

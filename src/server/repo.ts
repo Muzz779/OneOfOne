@@ -26,6 +26,7 @@ import type {
   ProductionJob,
   Refund,
   Shipment,
+  User,
 } from "@/domain/entities";
 import { variantKey } from "@/domain/entities";
 import type { AnalyticsEvent } from "@/domain/analytics";
@@ -115,6 +116,12 @@ export interface Repo {
   addNotification(n: Notification): Promise<Notification>;
   listNotifications(orderId?: string): Promise<Notification[]>;
 
+  // Customers
+  createUser(u: User): Promise<User>;
+  getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  listOrdersByUser(userId: string): Promise<Order[]>;
+
   // Config & admin
   getPricingConfig(): Promise<PricingConfig>;
   setPricingConfig(c: PricingConfig): Promise<PricingConfig>;
@@ -143,6 +150,7 @@ interface DbState {
   handledEvents: string[];
   pricingConfig: PricingConfig;
   admins: Record<string, AdminUser>;
+  users: Record<string, User>;
 }
 
 const DB_DIR = path.join(process.cwd(), ".data");
@@ -188,6 +196,7 @@ function seedState(): DbState {
     handledEvents: [],
     pricingConfig: DEFAULT_PRICING_CONFIG,
     admins: { [admin.id]: admin },
+    users: {},
   };
 }
 
@@ -468,6 +477,26 @@ export class InMemoryRepo implements Repo {
     return Object.values(this.state.admins).find(
       (a) => a.email.toLowerCase() === email.toLowerCase(),
     );
+  }
+
+  // Customers
+  async createUser(u: User) {
+    this.state.users[u.id] = u;
+    this.persist();
+    return u;
+  }
+  async getUser(id: string) {
+    return this.state.users[id];
+  }
+  async getUserByEmail(email: string) {
+    return Object.values(this.state.users).find(
+      (u) => u.email.toLowerCase() === email.toLowerCase(),
+    );
+  }
+  async listOrdersByUser(userId: string) {
+    return Object.values(this.state.orders)
+      .filter((o) => o.userId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   // Analytics

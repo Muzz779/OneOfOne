@@ -19,6 +19,9 @@ export interface User {
   readonly id: string;
   readonly email: string;
   readonly name?: string;
+  /** Salted scrypt hash — never plaintext (§40). */
+  readonly passwordSalt: string;
+  readonly passwordHash: string;
   readonly createdAt: Iso;
 }
 

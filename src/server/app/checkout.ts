@@ -8,6 +8,7 @@
 
 import "server-only";
 import { getDelivery, getPayment, getRepo } from "@/server/container";
+import { getCurrentUser } from "@/server/session";
 import { badRequest, conflict, notFound } from "@/server/errors";
 import { formatOrderNumber, newId } from "@/domain/ids";
 import { assertTransition } from "@/domain/orders";
@@ -81,10 +82,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
   const seq = await repo.nextOrderSeq();
   const now = new Date().toISOString();
+  const currentUser = await getCurrentUser();
   const order: Order = {
     id: newId("ord"),
     orderNumber: formatOrderNumber(seq),
-    userId: cart.userId,
+    userId: currentUser?.id ?? cart.userId,
     customer: input.customer,
     deliveryMethod: input.deliveryMethod,
     deliveryAddress: input.deliveryAddress,
@@ -126,6 +128,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   order.paymentId = paymentRecord.id;
 
   await repo.createOrder(order);
+
+  // Empty the cart now that its contents are captured on the order, so a new
+  // order doesn't accumulate previously-ordered items.
+  cart.items = [];
+  cart.updatedAt = now;
+  await repo.saveCart(cart);
+
   await repo.recordEvent({
     id: newId("ord"),
     type: "CHECKOUT_STARTED",

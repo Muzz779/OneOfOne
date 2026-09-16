@@ -30,7 +30,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
         <div className="card-raw p-6">
           <div className="relative mx-auto w-full max-w-sm" style={{ aspectRatio: "100 / 120" }}>
-            <GarmentSilhouette category={product.category} hex={product.colours[0].hex} />
+            <GarmentSilhouette kind={product.silhouette} hex={product.colours[0].hex} />
           </div>
         </div>
         <div>

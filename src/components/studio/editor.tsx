@@ -182,7 +182,7 @@ export function GarmentEditor({
           className="relative w-full max-w-[340px] select-none"
           style={{ aspectRatio: "100 / 120" }}
         >
-          <GarmentSilhouette category={product.category} hex={hex} view={viewForSide(area.side)} />
+          <GarmentSilhouette kind={product.silhouette} hex={hex} view={viewForSide(area.side)} />
 
           {/* Printable area boundary (subtle but clear, §11) */}
           <div

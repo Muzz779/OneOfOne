@@ -28,6 +28,15 @@ export function CheckoutClient() {
       const res = await fetch("/api/cart");
       const data = await res.json();
       if (data.breakdown) setCart(data as CartViewDTO);
+      try {
+        const me = await fetch("/api/auth/me");
+        const mj = await me.json();
+        if (mj.user) {
+          setForm((f) => ({ ...f, name: mj.user.name || f.name, email: mj.user.email || f.email }));
+        }
+      } catch {
+        /* guest checkout is fine */
+      }
     })();
   }, []);
 

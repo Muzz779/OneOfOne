@@ -59,6 +59,9 @@ function SiteHeader() {
           <Link href="/studio" className="px-2 py-1 hover:underline underline-offset-4">
             Studio
           </Link>
+          <Link href="/account" className="hidden px-2 py-1 hover:underline underline-offset-4 sm:inline">
+            Account
+          </Link>
           <Link href="/cart" className="px-2 py-1 hover:underline underline-offset-4">
             Cart
           </Link>
@@ -80,6 +83,8 @@ function SiteFooter() {
         </span>
         <nav className="flex items-center gap-4 font-semibold">
           <Link href="/products" className="hover:underline underline-offset-4">Shop</Link>
+          <Link href="/account" className="hover:underline underline-offset-4">Account</Link>
+          <Link href="/support" className="hover:underline underline-offset-4">Support</Link>
           <Link href="/terms" className="hover:underline underline-offset-4">Terms</Link>
           <Link href="/privacy" className="hover:underline underline-offset-4">Privacy</Link>
         </nav>

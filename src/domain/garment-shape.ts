@@ -5,16 +5,16 @@
  * client React silhouette and the server-side SVG mockup builder — so the
  * customer preview and the derived mockup are the same shape (§4).
  *
- * Each garment has a FRONT and BACK view: same body outline, but the front
- * shows collar rib / hood opening / pocket / drawstrings, while the back shows a
- * yoke seam / full hood dome and no pocket.
+ * Shapes are keyed by a `GarmentKind` (decoupled from product category so, e.g.,
+ * three jacket products can share or vary the drawing). Each kind has FRONT and
+ * BACK views.
  */
 
-import type { Product } from "./products";
 import type { PrintSide } from "./products";
 
 export const GARMENT_VIEWBOX = { w: 100, h: 120 } as const;
 
+export type GarmentKind = "tee" | "hoodie" | "jacket" | "puffer";
 export type GarmentView = "front" | "back";
 
 export interface GarmentPath {
@@ -23,6 +23,7 @@ export interface GarmentPath {
   readonly role: "body" | "seam";
 }
 
+/** Sleeve prints render on the front-facing view. */
 export function viewForSide(side: PrintSide): GarmentView {
   return side === "BACK" ? "back" : "front";
 }
@@ -36,8 +37,6 @@ export function isLightHex(hex: string): boolean {
 }
 
 // --- Tee -------------------------------------------------------------------
-
-// Body outline with set-in sleeves and a gentle crew neck. Shared front/back.
 const TEE_BODY =
   "M42 13 C45 18 55 18 58 13 L70 13 L90 20 L96 33 L86 44 L76 37 L76 112 L24 112 L24 37 L14 44 L4 33 L10 20 L30 13 Z";
 const TEE_COLLAR_FRONT = "M40 13 C44 19 56 19 60 13";
@@ -47,7 +46,6 @@ const TEE_SLEEVE_L = "M8 31 L16 40";
 const TEE_SLEEVE_R = "M92 31 L84 40";
 
 // --- Hoodie ----------------------------------------------------------------
-
 const HOODIE_BODY =
   "M42 16 C45 24 55 24 58 16 L72 16 L92 23 L98 37 L88 48 L77 41 L77 112 L23 112 L23 41 L12 48 L2 37 L8 23 L28 16 Z";
 const HOODIE_HOOD_FRONT =
@@ -62,11 +60,27 @@ const HOODIE_HEM = "M23 104 L77 104";
 const HOODIE_CUFF_L = "M2 37 L12 42";
 const HOODIE_CUFF_R = "M98 37 L88 42";
 
+// --- Jacket / Puffer -------------------------------------------------------
+const JACKET_BODY =
+  "M40 15 L60 15 L74 17 L94 24 L99 38 L89 49 L78 42 L78 112 L22 112 L22 42 L11 49 L1 38 L6 24 L26 17 Z";
+const JACKET_COLLAR = "M40 15 L46 23 L50 19 L54 23 L60 15";
+const JACKET_STAND_COLLAR = "M42 15 L44 8 L56 8 L58 15";
+const JACKET_ZIP = "M50 19 L50 112";
+const JACKET_ZIP_PUFFER = "M50 15 L50 112";
+const JACKET_POCKET_L = "M27 80 L41 80 L41 95 L27 95 Z";
+const JACKET_POCKET_R = "M59 80 L73 80 L73 95 L59 95 Z";
+const JACKET_CUFF_L = "M1 38 L11 43";
+const JACKET_CUFF_R = "M99 38 L89 43";
+const JACKET_HEM = "M22 106 L78 106";
+const JACKET_YOKE_BACK = "M26 27 L74 27";
+const JACKET_BACKSEAM = "M50 27 L50 112";
+const PUFFER_QUILT = [46, 60, 74, 88, 100].map((y) => `M22 ${y} L78 ${y}`);
+
 export function garmentPaths(
-  category: Product["category"],
+  kind: GarmentKind,
   view: GarmentView = "front",
 ): GarmentPath[] {
-  if (category === "hoodie") {
+  if (kind === "hoodie") {
     const paths: GarmentPath[] = [
       { role: "body", d: view === "back" ? HOODIE_HOOD_BACK : HOODIE_HOOD_FRONT },
       { role: "body", d: HOODIE_BODY },
@@ -86,20 +100,41 @@ export function garmentPaths(
     return paths;
   }
 
+  if (kind === "jacket" || kind === "puffer") {
+    const paths: GarmentPath[] = [
+      { role: "body", d: JACKET_BODY },
+      { role: "seam", d: JACKET_HEM },
+      { role: "seam", d: JACKET_CUFF_L },
+      { role: "seam", d: JACKET_CUFF_R },
+    ];
+    if (view === "front") {
+      paths.push({ role: "seam", d: kind === "puffer" ? JACKET_STAND_COLLAR : JACKET_COLLAR });
+      paths.push({ role: "seam", d: kind === "puffer" ? JACKET_ZIP_PUFFER : JACKET_ZIP });
+      if (kind === "jacket") {
+        paths.push({ role: "seam", d: JACKET_POCKET_L }, { role: "seam", d: JACKET_POCKET_R });
+      }
+    } else {
+      paths.push({ role: "seam", d: JACKET_YOKE_BACK }, { role: "seam", d: JACKET_BACKSEAM });
+    }
+    if (kind === "puffer") {
+      for (const q of PUFFER_QUILT) paths.push({ role: "seam", d: q });
+    }
+    return paths;
+  }
+
   // Tee
-  const paths: GarmentPath[] = [
+  return [
     { role: "body", d: TEE_BODY },
     { role: "seam", d: TEE_HEM },
     { role: "seam", d: TEE_SLEEVE_L },
     { role: "seam", d: TEE_SLEEVE_R },
     { role: "seam", d: view === "back" ? TEE_YOKE_BACK : TEE_COLLAR_FRONT },
   ];
-  return paths;
 }
 
 /** Build a standalone SVG document string (for server-side rasterisation). */
 export function garmentSvgString(
-  category: Product["category"],
+  kind: GarmentKind,
   hex: string,
   widthPx: number,
   heightPx: number,
@@ -107,7 +142,7 @@ export function garmentSvgString(
 ): string {
   const seam = isLightHex(hex) ? "rgba(0,0,0,0.20)" : "rgba(255,255,255,0.24)";
   const ink = "#121212";
-  const paths = garmentPaths(category, view)
+  const paths = garmentPaths(kind, view)
     .map((p) =>
       p.role === "body"
         ? `<path d="${p.d}" fill="${hex}" stroke="${ink}" stroke-width="2" stroke-linejoin="round"/>`

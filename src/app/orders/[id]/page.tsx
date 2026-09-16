@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCustomerOrder, mockupKey } from "@/server/app/orders";
+import { getCurrentUser } from "@/server/session";
 import { ORDER_STATE_LABELS } from "@/domain/orders";
 import { formatZar } from "@/domain/pricing";
 
@@ -17,6 +18,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   }
   const { order, mockups, shipment } = data!;
   const paid = order.status !== "DRAFT" && order.status !== "PENDING_PAYMENT" && order.status !== "FAILED";
+  const user = await getCurrentUser();
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -37,6 +39,18 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           <Link href={`/pay/mock?order=${order.id}&amount=${order.breakdown.totalCents}`} className="btn-raw mt-4 inline-flex">
             Complete payment →
           </Link>
+        )}
+        {paid && !user && (
+          <p className="mt-4 border-2 border-ink bg-volt/30 px-3 py-2 text-sm">
+            Want to keep track of this order?{" "}
+            <Link href="/account/register" className="font-bold underline underline-offset-4">Create an account</Link>{" "}
+            with {order.customer.email}.
+          </p>
+        )}
+        {paid && user && (
+          <p className="mt-4 text-sm text-muted">
+            Saved to <Link href="/account" className="font-semibold underline underline-offset-4">your account</Link>.
+          </p>
         )}
       </div>
 

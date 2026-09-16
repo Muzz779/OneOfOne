@@ -276,7 +276,7 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <section className="space-y-6">
             {/* Side tabs */}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {product.printSides.map((s) => {
                 const has = !!sideArt(s);
                 return (
@@ -284,13 +284,13 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
                     key={s}
                     type="button"
                     onClick={() => setActiveSide(s)}
-                    className={`flex items-center gap-2 border-2 border-ink px-4 py-2 font-bold capitalize ${
+                    className={`flex items-center gap-2 border-2 border-ink px-3 py-2 text-sm font-bold capitalize ${
                       activeSide === s ? "bg-ink text-paper shadow-[3px_3px_0_0_var(--accent)]" : "bg-paper hover:bg-paper-2"
                     }`}
                   >
-                    {s.toLowerCase()}
+                    {s.replace("_", " ").toLowerCase()}
                     <span className={`badge-raw ${has ? "bg-ok text-white" : "bg-paper text-muted"}`}>
-                      {has ? "designed" : "empty"}
+                      {has ? "✓" : "＋"}
                     </span>
                   </button>
                 );
