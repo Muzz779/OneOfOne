@@ -1,26 +1,137 @@
 @import "tailwindcss";
 
+/*
+ * OneOfOne — Neo-Brutalist / Modern Raw design system (CLAUDE.md §34).
+ * ONE identity across storefront, editor, checkout and admin.
+ * Sharp edges by default, solid black borders, hard offset shadows,
+ * high-contrast colour drawn from garment/streetwear energy.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #f4f1ea; /* warm off-white, not clinical grey */
+  --ink: #121212; /* near-black borders & text */
+  --paper-2: #fffdf7; /* raised surfaces */
+  --muted: #6b675e;
+
+  --accent: #ff4d2e; /* blaze orange — primary CTA energy */
+  --accent-2: #2b4cf0; /* electric blue */
+  --volt: #d6f24a; /* highlight / volt lime */
+
+  --ok: #16a34a; /* Excellent */
+  --good: #2b4cf0; /* Good */
+  --warn: #f59e0b; /* Needs enhancement */
+  --danger: #dc2626; /* Too low / fail */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-volt: var(--volt);
+  --color-ok: var(--ok);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --font-display: var(--font-space-grotesk);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Hard, un-blurred brutalist shadows. */
+  --shadow-hard: 4px 4px 0 0 var(--ink);
+  --shadow-hard-lg: 6px 6px 0 0 var(--ink);
+  --shadow-hard-sm: 2px 2px 0 0 var(--ink);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --paper: #14130f;
+    --paper-2: #1e1c17;
+    --ink: #f4f1ea;
+    --muted: #a8a498;
   }
 }
 
+:root[data-theme="dark"] {
+  --paper: #14130f;
+  --paper-2: #1e1c17;
+  --ink: #f4f1ea;
+  --muted: #a8a498;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Brutalist primitives used across the app. Utilities compose these. */
+@layer components {
+  .card-raw {
+    background: var(--paper-2);
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    box-shadow: var(--shadow-hard);
+  }
+
+  .btn-raw {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    padding: 0.65rem 1.1rem;
+    box-shadow: var(--shadow-hard);
+    transition:
+      transform 120ms ease,
+      box-shadow 120ms ease;
+    cursor: pointer;
+  }
+  .btn-raw:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: var(--shadow-hard-lg);
+  }
+  .btn-raw:active {
+    transform: translate(2px, 2px);
+    box-shadow: var(--shadow-hard-sm);
+  }
+  .btn-raw:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: var(--shadow-hard);
+  }
+
+  .badge-raw {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    padding: 0.15rem 0.55rem;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1.4;
+  }
+}
+
+/* Respect reduced motion everywhere (§35, §46). */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
