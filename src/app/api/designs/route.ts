@@ -14,12 +14,16 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) throw badRequest("Please choose a file to upload.");
+    const designId = form.get("designId");
+    const side = form.get("side");
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const dto = await uploadArtwork({
       buffer,
       mimeType: file.type,
       filename: file.name,
+      designId: typeof designId === "string" && designId ? designId : undefined,
+      side: side === "BACK" || side === "FRONT" ? side : undefined,
     });
     return json(dto, { status: 201 });
   } catch (e) {

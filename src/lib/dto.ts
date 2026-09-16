@@ -19,20 +19,27 @@ export interface ProcessingNote {
   readonly noop?: boolean;
 }
 
-export interface DesignDTO {
-  readonly id: string;
-  readonly productId: string;
+export interface SideArtworkDTO {
   readonly side: PrintSide;
-  readonly colour: string;
-  readonly size: string;
-  readonly placement: Placement;
   readonly facts: ImageFacts;
-  readonly status: "DRAFT" | "READY";
+  readonly placement: Placement;
   readonly version: number;
   /** Signed URL of the current (working) artwork for preview. */
   readonly workingUrl: string;
-  readonly updatedAt: string;
+  /** Set on the side that was just enhanced / background-removed. */
   readonly lastProcessing?: ProcessingNote;
+}
+
+export interface DesignDTO {
+  readonly id: string;
+  readonly productId: string;
+  readonly colour: string;
+  readonly size: string;
+  readonly activeSide: PrintSide;
+  /** Only sides that have artwork. */
+  readonly sides: readonly SideArtworkDTO[];
+  readonly status: "DRAFT" | "READY";
+  readonly updatedAt: string;
 }
 
 export interface CartItemDTO {

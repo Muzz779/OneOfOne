@@ -2,8 +2,8 @@
  * Server-side pricing orchestration (CLAUDE.md §16, §40).
  *
  * Turns a cart (or a single design) into a {@link PriceBreakdown} using the
- * admin-configured pricing rules. Pricing is ALWAYS computed here, never trusted
- * from the client.
+ * admin-configured pricing rules. A garment is priced once plus a print charge
+ * per printed side (front and/or back). Pricing is ALWAYS computed here.
  */
 
 import "server-only";
@@ -18,32 +18,25 @@ import {
   type PriceBreakdown,
   type PricingLineInput,
 } from "@/domain/pricing";
-import type { Cart, Design, OrderPrint } from "@/domain/entities";
+import { designedSides, type Cart, type Design, type OrderPrint } from "@/domain/entities";
 
-export interface ItemPrintSpec {
+export interface SidePrintSpec {
   readonly print: OrderPrint;
   readonly areaCm2: number;
 }
 
-/** Physical print spec for a design's single printed side. */
-export function itemPrintSpec(design: Design): ItemPrintSpec {
+/** Physical print spec for every printed side of a design. */
+export function designPrintSpecs(design: Design): SidePrintSpec[] {
   const spec = getPrinterSpec();
   const product = getProductById(design.productId)!;
-  const { printBox } = designPrintBox(
-    design.facts,
-    design.placement,
-    product,
-    design.side,
-    spec,
-  );
-  return {
-    print: {
-      side: design.side,
-      widthMm: printBox.widthMm,
-      heightMm: printBox.heightMm,
-    },
-    areaCm2: areaCm2FromMm(printBox.widthMm, printBox.heightMm),
-  };
+  return designedSides(design).map((side) => {
+    const sa = design.sides[side]!;
+    const { printBox } = designPrintBox(sa.facts, sa.placement, product, side, spec);
+    return {
+      print: { side, widthMm: printBox.widthMm, heightMm: printBox.heightMm },
+      areaCm2: areaCm2FromMm(printBox.widthMm, printBox.heightMm),
+    };
+  });
 }
 
 export interface CartLineMeta {
@@ -54,7 +47,7 @@ export interface CartLineMeta {
   readonly colour: string;
   readonly size: string;
   readonly quantity: number;
-  readonly print: OrderPrint;
+  readonly prints: OrderPrint[];
   readonly unitLine: PricingLineInput;
 }
 
@@ -76,12 +69,13 @@ export async function quoteCart(
     const design = await repo.getDesign(item.designId);
     const product = getProductById(item.productId);
     if (!design || !product) continue;
-    const { print, areaCm2 } = itemPrintSpec(design);
+    const specs = designPrintSpecs(design);
+    if (specs.length === 0) continue;
     const unitLine: PricingLineInput = {
       garmentRetailCents: product.basePriceCents,
       garmentSupplyCents: product.supplyCostCents,
       quantity: item.quantity,
-      prints: [{ areaCm2 }],
+      prints: specs.map((s) => ({ areaCm2: s.areaCm2 })),
     };
     pricingLines.push(unitLine);
     lines.push({
@@ -92,7 +86,7 @@ export async function quoteCart(
       colour: item.colour,
       size: item.size,
       quantity: item.quantity,
-      print,
+      prints: specs.map((s) => s.print),
       unitLine,
     });
   }
@@ -110,7 +104,7 @@ export async function quoteDesign(
   const design = await repo.getDesign(designId);
   if (!design) throw notFound("We couldn't find that design.");
   const product = getProductById(design.productId)!;
-  const { areaCm2 } = itemPrintSpec(design);
+  const specs = designPrintSpecs(design);
   const config = await repo.getPricingConfig();
   return computePrice(
     [
@@ -118,7 +112,7 @@ export async function quoteDesign(
         garmentRetailCents: product.basePriceCents,
         garmentSupplyCents: product.supplyCostCents,
         quantity: 1,
-        prints: [{ areaCm2 }],
+        prints: specs.map((s) => ({ areaCm2: s.areaCm2 })),
       },
     ],
     { deliveryMethod },

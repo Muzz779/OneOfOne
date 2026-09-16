@@ -78,28 +78,45 @@ export interface DesignAsset {
 
 export type DesignStatus = "DRAFT" | "READY";
 
-export interface Design {
-  readonly id: string;
-  userId?: string;
-  productId: string;
-  side: PrintSide;
-  colour: string;
-  size: string;
-  placement: Placement;
-  /** Facts of the artwork currently driving the editor (original or processed). */
+/** Artwork + placement for ONE printed side of a garment (§4, §7). */
+export interface SideArtwork {
+  /** Facts of the artwork currently driving this side (original or processed). */
   facts: ImageFacts;
-  status: DesignStatus;
+  placement: Placement;
   version: number;
   originalAssetId: string;
-  workingAssetId?: string;
+  workingAssetId: string;
   enhancedAssetId?: string;
   bgRemovedAssetId?: string;
   productionAssetId?: string;
   mockupAssetId?: string;
+}
+
+/**
+ * A Design is ONE physical garment (product + colour + size) that can carry a
+ * different artwork on each printable side — e.g. one design on the front and a
+ * different one on the back (§9, §11).
+ */
+export interface Design {
+  readonly id: string;
+  userId?: string;
+  productId: string;
+  colour: string;
+  size: string;
+  /** Per-side artwork; a side is only printed if present here. */
+  sides: Partial<Record<PrintSide, SideArtwork>>;
+  /** The side currently being edited in the studio. */
+  activeSide: PrintSide;
+  status: DesignStatus;
   /** Opt-in public share token (§48); absent = private. */
   shareToken?: string;
   readonly createdAt: Iso;
   updatedAt: Iso;
+}
+
+/** The printed sides of a design that actually have artwork. */
+export function designedSides(design: Design): PrintSide[] {
+  return (Object.keys(design.sides) as PrintSide[]).filter((s) => design.sides[s]);
 }
 
 export interface CartItem {
@@ -136,11 +153,13 @@ export interface DeliveryAddress {
   readonly pudoPointName?: string;
 }
 
-/** A printed side within an order item, with its physical size. */
+/** A printed side within an order item, with its physical size + production refs. */
 export interface OrderPrint {
   readonly side: PrintSide;
   readonly widthMm: number;
   readonly heightMm: number;
+  productionAssetId?: string;
+  preflightResultId?: string;
 }
 
 export interface OrderItem {
@@ -151,10 +170,9 @@ export interface OrderItem {
   readonly colour: string;
   readonly size: string;
   readonly quantity: number;
-  readonly prints: readonly OrderPrint[];
+  /** One entry per printed side (front and/or back, each its own artwork). */
+  prints: OrderPrint[];
   readonly unitPriceCents: number;
-  productionAssetId?: string;
-  preflightResultId?: string;
 }
 
 export interface OrderTimelineEntry {

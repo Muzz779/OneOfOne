@@ -13,7 +13,7 @@ import type { ImageFacts } from "@/lib/print/analysis";
 import type { Placement } from "@/lib/print/placement";
 import type { Product } from "@/domain/products";
 import type { PrintArea } from "@/domain/products";
-import { garmentSvgString } from "@/domain/garment-shape";
+import { garmentSvgString, viewForSide } from "@/domain/garment-shape";
 import { mmToPx, pxToMm } from "@/lib/print/units";
 
 function mapFormat(f: string | undefined): ImageFacts["format"] {
@@ -136,7 +136,13 @@ export class SharpImageProcessor implements ImageProcessor {
   async generateMockup(input: MockupRenderInput): Promise<MockupRenderResult> {
     const base = sharp(
       Buffer.from(
-        garmentSvgString(input.product.category, input.hex, MOCKUP_W, MOCKUP_H),
+        garmentSvgString(
+          input.product.category,
+          input.hex,
+          MOCKUP_W,
+          MOCKUP_H,
+          viewForSide(input.area.side),
+        ),
       ),
     ).png();
 

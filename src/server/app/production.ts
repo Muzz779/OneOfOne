@@ -1,12 +1,12 @@
 /**
  * Production workflow (CLAUDE.md §4, §13, §21, §22, §23, §24).
  *
- * On a paid order: freeze it, generate an immutable production artwork per item
- * at the printer's exact resolution, run server-side preflight, record the
- * versioned production asset + preflight result, and derive the customer mockup
- * from the SAME production artwork. If every item passes, the order becomes
- * PRINT_READY and a production job is queued; if any fails, it goes to
- * ARTWORK_REVIEW for a human (§23 — never auto-print a failing file).
+ * On a paid order: freeze it, and for EACH printed side of each item generate an
+ * immutable production artwork at the printer's exact resolution, run
+ * server-side preflight, record the versioned production asset + preflight
+ * result, and derive that side's mockup from the same production file. If every
+ * side passes, the order becomes PRINT_READY and a production job is queued; if
+ * any fails, it goes to ARTWORK_REVIEW for a human (§23).
  */
 
 import "server-only";
@@ -18,14 +18,16 @@ import {
 } from "@/server/container";
 import { newId } from "@/domain/ids";
 import { assertTransition } from "@/domain/orders";
-import { getProductById } from "@/domain/products";
+import { getProductById, type PrintSide } from "@/domain/products";
 import { designPrintBox } from "@/lib/print/design-calc";
 import { runPreflight } from "@/lib/print/preflight";
 import type {
   Design,
   Order,
+  OrderPrint,
   PreflightResultRecord,
   ProductionAsset,
+  SideArtwork,
 } from "@/domain/entities";
 import { notifyOrder } from "./notify";
 
@@ -36,7 +38,6 @@ async function transition(order: Order, to: Order["status"], note?: string): Pro
   order.updatedAt = new Date().toISOString();
 }
 
-/** Generate production artwork + preflight for one order, in place. */
 export async function runProductionForOrder(order: Order): Promise<Order> {
   const repo = getRepo();
   const storage = getStorage();
@@ -57,77 +58,74 @@ export async function runProductionForOrder(order: Order): Promise<Order> {
       continue;
     }
 
-    const { printBox } = designPrintBox(design.facts, design.placement, product, design.side, spec);
+    for (const print of item.prints) {
+      const side = print.side;
+      const sa = design.sides[side];
+      if (!sa) {
+        anyFailed = true;
+        continue;
+      }
 
-    // Source = current working artwork bytes.
-    const workingAsset = await repo.getAsset(design.workingAssetId ?? design.originalAssetId);
-    if (!workingAsset) {
-      anyFailed = true;
-      continue;
+      const { printBox } = designPrintBox(sa.facts, sa.placement, product, side, spec);
+      const workingAsset = await repo.getAsset(sa.workingAssetId);
+      if (!workingAsset) {
+        anyFailed = true;
+        continue;
+      }
+      const source = await storage.get(workingAsset.bucket, workingAsset.storageKey);
+
+      const prod = await image.generateProduction({
+        source,
+        isVector: sa.facts.isVector,
+        dpi: spec.dpi,
+        printWidthMm: printBox.widthMm,
+        printHeightMm: printBox.heightMm,
+        rotationDeg: sa.placement.rotationDeg,
+      });
+
+      const preflight = runPreflight(
+        sa.facts,
+        { side, print: printBox, outputFormat: spec.fileFormat, productionFileSizeBytes: prod.buffer.byteLength },
+        product,
+        spec,
+      );
+      const preflightRec: PreflightResultRecord = {
+        id: newId("pf"),
+        result: preflight,
+        createdAt: new Date().toISOString(),
+      };
+      await repo.savePreflight(preflightRec);
+      print.preflightResultId = preflightRec.id;
+
+      const prodKey = `${order.orderNumber.replace("#", "")}/${item.id}_${side}_v${sa.version}.png`;
+      const { bytes } = await storage.put("production", prodKey, prod.buffer, "image/png");
+      const productionAsset: ProductionAsset = {
+        id: newId("pa"),
+        orderId: order.id,
+        orderItemId: item.id,
+        designId: design.id,
+        version: sa.version,
+        productName: product.name,
+        colour: item.colour,
+        size: item.size,
+        side,
+        widthMm: Math.round(prod.boundingWidthMm * 10) / 10,
+        heightMm: Math.round(prod.boundingHeightMm * 10) / 10,
+        dpi: spec.dpi,
+        format: spec.fileFormat,
+        bucket: "production",
+        storageKey: prodKey,
+        bytes,
+        preflightResultId: preflightRec.id,
+        createdAt: new Date().toISOString(),
+      };
+      await repo.addProductionAsset(productionAsset);
+      print.productionAssetId = productionAsset.id;
+
+      await generateSideMockup(order, design, side, sa, prod.buffer, prod.boundingWidthMm, prod.boundingHeightMm);
+
+      if (preflight.result === "FAIL") anyFailed = true;
     }
-    const source = await storage.get(workingAsset.bucket, workingAsset.storageKey);
-
-    // Render production artwork at the printer's exact DPI (§24).
-    const prod = await image.generateProduction({
-      source,
-      isVector: design.facts.isVector,
-      dpi: spec.dpi,
-      printWidthMm: printBox.widthMm,
-      printHeightMm: printBox.heightMm,
-      rotationDeg: design.placement.rotationDeg,
-    });
-
-    // Server-side authoritative preflight (§23).
-    const preflight = runPreflight(
-      design.facts,
-      {
-        side: design.side,
-        print: printBox,
-        outputFormat: spec.fileFormat,
-        productionFileSizeBytes: prod.buffer.byteLength,
-      },
-      product,
-      spec,
-    );
-    const preflightRec: PreflightResultRecord = {
-      id: newId("pf"),
-      result: preflight,
-      createdAt: new Date().toISOString(),
-    };
-    await repo.savePreflight(preflightRec);
-    item.preflightResultId = preflightRec.id;
-
-    // Store the immutable production file (§4, §22).
-    const version = design.version;
-    const prodKey = `${order.orderNumber.replace("#", "")}/${item.id}_v${version}_${design.side}.png`;
-    const { bytes } = await storage.put("production", prodKey, prod.buffer, "image/png");
-    const productionAsset: ProductionAsset = {
-      id: newId("pa"),
-      orderId: order.id,
-      orderItemId: item.id,
-      designId: design.id,
-      version,
-      productName: product.name,
-      colour: item.colour,
-      size: item.size,
-      side: design.side,
-      widthMm: Math.round(prod.boundingWidthMm * 10) / 10,
-      heightMm: Math.round(prod.boundingHeightMm * 10) / 10,
-      dpi: spec.dpi,
-      format: spec.fileFormat,
-      bucket: "production",
-      storageKey: prodKey,
-      bytes,
-      preflightResultId: preflightRec.id,
-      createdAt: new Date().toISOString(),
-    };
-    await repo.addProductionAsset(productionAsset);
-    item.productionAssetId = productionAsset.id;
-
-    // Derive the customer mockup FROM the production artwork (§4, §13).
-    await generateAndStoreMockup(order, design, prod.buffer, prod.boundingWidthMm, prod.boundingHeightMm);
-
-    if (preflight.result === "FAIL") anyFailed = true;
   }
 
   if (anyFailed) {
@@ -140,21 +138,16 @@ export async function runProductionForOrder(order: Order): Promise<Order> {
   await transition(order, "PRINT_READY", "All items passed preflight");
   await repo.saveOrder(order);
 
-  // Queue for the production floor (§26).
   const now = new Date().toISOString();
-  await repo.addProductionJob({
-    id: newId("job"),
-    orderId: order.id,
-    status: "QUEUED",
-    createdAt: now,
-    updatedAt: now,
-  });
+  await repo.addProductionJob({ id: newId("job"), orderId: order.id, status: "QUEUED", createdAt: now, updatedAt: now });
   return order;
 }
 
-async function generateAndStoreMockup(
+async function generateSideMockup(
   order: Order,
   design: Design,
+  side: PrintSide,
+  sa: SideArtwork,
   productionPng: Buffer,
   boundingWidthMm: number,
   boundingHeightMm: number,
@@ -165,7 +158,7 @@ async function generateAndStoreMockup(
   const spec = getPrinterSpec();
   const product = getProductById(design.productId);
   if (!product) return;
-  const { bounds } = designPrintBox(design.facts, design.placement, product, design.side, spec);
+  const { bounds } = designPrintBox(sa.facts, sa.placement, product, side, spec);
   const colour = product.colours.find((c) => c.name === design.colour) ?? product.colours[0];
 
   const mockup = await image.generateMockup({
@@ -173,14 +166,14 @@ async function generateAndStoreMockup(
     product,
     area: bounds.area,
     hex: colour.hex,
-    placement: design.placement,
+    placement: sa.placement,
     maxWidthMm: bounds.maxWidthMm,
     maxHeightMm: bounds.maxHeightMm,
     boundingWidthMm,
     boundingHeightMm,
   });
 
-  const key = `${order.orderNumber.replace("#", "")}/${design.id}_mockup.png`;
+  const key = `${order.orderNumber.replace("#", "")}/${design.id}_${side}_mockup.png`;
   const { bytes } = await storage.put("mockups", key, mockup.buffer, "image/png");
   const asset = await repo.addAsset({
     id: newId("ast"),
@@ -195,6 +188,9 @@ async function generateAndStoreMockup(
     hash: "",
     createdAt: new Date().toISOString(),
   });
-  design.mockupAssetId = asset.id;
+  sa.mockupAssetId = asset.id;
   await repo.saveDesign(design);
 }
+
+// Note: OrderPrint is mutated in place above; exported for clarity of intent.
+export type { OrderPrint };

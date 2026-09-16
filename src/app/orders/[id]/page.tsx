@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCustomerOrder } from "@/server/app/orders";
+import { getCustomerOrder, mockupKey } from "@/server/app/orders";
 import { ORDER_STATE_LABELS } from "@/domain/orders";
 import { formatZar } from "@/domain/pricing";
 
@@ -43,20 +43,31 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="space-y-4">
           {order.items.map((item) => (
-            <div key={item.id} className="card-raw flex gap-4 p-4">
-              {mockups[item.designId] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={mockups[item.designId]} alt="" className="h-28 w-28 shrink-0 border-2 border-ink object-contain bg-paper" />
-              ) : (
-                <div className="grid h-28 w-28 shrink-0 place-items-center border-2 border-ink bg-paper text-xs text-muted">preview after payment</div>
-              )}
-              <div className="flex-1">
-                <h3 className="font-display text-lg font-bold">{item.productName}</h3>
-                <p className="font-mono text-xs text-muted">{item.colour} · {item.size} · qty {item.quantity}</p>
-                <p className="mt-1 font-mono text-xs text-muted">
-                  {item.prints.map((p) => `${p.side} ${(p.widthMm / 10).toFixed(0)}×${(p.heightMm / 10).toFixed(0)}cm`).join(" · ")}
-                </p>
-                <p className="mt-2 font-semibold">{formatZar(item.unitPriceCents)} each</p>
+            <div key={item.id} className="card-raw p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-display text-lg font-bold">{item.productName}</h3>
+                  <p className="font-mono text-xs text-muted">{item.colour} · {item.size} · qty {item.quantity}</p>
+                </div>
+                <p className="font-semibold">{formatZar(item.unitPriceCents)} each</p>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-4">
+                {item.prints.map((p) => {
+                  const url = mockups[mockupKey(item.designId, p.side)];
+                  return (
+                    <figure key={p.side} className="text-center">
+                      {url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={url} alt={`${p.side} print`} className="h-32 w-28 border-2 border-ink object-contain bg-paper" />
+                      ) : (
+                        <div className="grid h-32 w-28 place-items-center border-2 border-ink bg-paper text-[11px] text-muted">preview after payment</div>
+                      )}
+                      <figcaption className="mt-1 font-mono text-[11px] capitalize text-muted">
+                        {p.side.toLowerCase()} · {(p.widthMm / 10).toFixed(0)}×{(p.heightMm / 10).toFixed(0)}cm
+                      </figcaption>
+                    </figure>
+                  );
+                })}
               </div>
             </div>
           ))}

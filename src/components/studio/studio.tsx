@@ -10,7 +10,7 @@ import { runPreflight, type CheckStatus } from "@/lib/print/preflight";
 import { formatZar, type PriceBreakdown } from "@/domain/pricing";
 import { getProductById, SEED_PRODUCTS, type PrintSide } from "@/domain/products";
 import { ACCEPTED_UPLOAD_TYPES } from "@/lib/print/measure-client";
-import type { DesignDTO, ProcessingNote } from "@/lib/dto";
+import type { DesignDTO, ProcessingNote, SideArtworkDTO } from "@/lib/dto";
 import { GarmentEditor } from "./editor";
 
 const spec = getActivePrinterSpec();
@@ -34,45 +34,50 @@ function cm(mm: number): string {
 export function Studio({ initialDesignId }: { initialDesignId?: string }) {
   const router = useRouter();
   const [design, setDesign] = useState<DesignDTO | null>(null);
-  const [placement, setPlacement] = useState<Placement>(DEFAULT_PLACEMENT);
-  const [side, setSide] = useState<PrintSide>("FRONT");
+  const [activeSide, setActiveSide] = useState<PrintSide>("FRONT");
   const [productId, setProductId] = useState(SEED_PRODUCTS[0].id);
   const [colourName, setColourName] = useState(SEED_PRODUCTS[0].colours[0].name);
   const [size, setSize] = useState("M");
   const [quantity, setQuantity] = useState(1);
+  const [placements, setPlacements] = useState<Partial<Record<PrintSide, Placement>>>({});
 
   const [busy, setBusy] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<ProcessingNote | null>(null);
+  const [note, setNote] = useState<{ side: PrintSide; note: ProcessingNote } | null>(null);
   const [quote, setQuote] = useState<PriceBreakdown | null>(null);
 
   const hydrating = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const product = useMemo(
-    () => getProductById(productId) ?? SEED_PRODUCTS[0],
-    [productId],
-  );
-  const bounds = useMemo(() => areaBounds(product, side, spec), [product, side]);
+  const product = useMemo(() => getProductById(productId) ?? SEED_PRODUCTS[0], [productId]);
   const colour = useMemo(
     () => product.colours.find((c) => c.name === colourName) ?? product.colours[0],
     [product, colourName],
   );
+  const bounds = useMemo(() => areaBounds(product, activeSide, spec), [product, activeSide]);
 
-  const applyDesign = useCallback((dto: DesignDTO, processingNote?: ProcessingNote) => {
-    hydrating.current = true;
-    setDesign(dto);
-    setPlacement(dto.placement);
-    setSide(dto.side);
-    setProductId(dto.productId);
-    setColourName(dto.colour);
-    setSize(dto.size);
-    setNote(processingNote ?? null);
-    // Release the hydration guard after state settles.
-    setTimeout(() => (hydrating.current = false), 0);
-  }, []);
+  const sideArt = (side: PrintSide): SideArtworkDTO | undefined =>
+    design?.sides.find((s) => s.side === side);
+  const activeArt = sideArt(activeSide);
+
+  const applyDesign = useCallback(
+    (dto: DesignDTO, processed?: { side: PrintSide; note: ProcessingNote }) => {
+      hydrating.current = true;
+      setDesign(dto);
+      setProductId(dto.productId);
+      setColourName(dto.colour);
+      setSize(dto.size);
+      setActiveSide(dto.activeSide);
+      const next: Partial<Record<PrintSide, Placement>> = {};
+      for (const s of dto.sides) next[s.side] = s.placement;
+      setPlacements(next);
+      setNote(processed ?? null);
+      setTimeout(() => (hydrating.current = false), 0);
+    },
+    [],
+  );
 
   // Resume an existing design (§12).
   useEffect(() => {
@@ -85,7 +90,7 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
         const dto = (await res.json()) as DesignDTO;
         if (alive) applyDesign(dto);
       } catch {
-        /* ignore resume failures */
+        /* ignore */
       }
     })();
     return () => {
@@ -93,12 +98,12 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
     };
   }, [initialDesignId, applyDesign]);
 
-  const aspect = design ? aspectOf(design.facts) : 1;
+  const placement = placements[activeSide] ?? DEFAULT_PLACEMENT;
+  const aspect = activeArt ? aspectOf(activeArt.facts) : 1;
   const printBox = useMemo(
     () => printBoxFor(aspect, placement.sizeFrac, bounds.maxWidthMm, bounds.maxHeightMm),
     [aspect, placement.sizeFrac, bounds.maxWidthMm, bounds.maxHeightMm],
   );
-
   const clampedPlacement = useMemo<Placement>(() => {
     const { xMm, yMm } = clampCenterMm(
       placement.posXFrac * bounds.maxWidthMm,
@@ -113,23 +118,31 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
   }, [placement, printBox, bounds]);
 
   const analysis = useMemo(
-    () => (design ? analyzeArtwork(design.facts, printBox, spec) : null),
-    [design, printBox],
+    () => (activeArt ? analyzeArtwork(activeArt.facts, printBox, spec) : null),
+    [activeArt, printBox],
   );
   const preflight = useMemo(
     () =>
-      design
-        ? runPreflight(
-            design.facts,
-            { side, print: printBox, outputFormat: spec.fileFormat },
-            product,
-            spec,
-          )
+      activeArt
+        ? runPreflight(activeArt.facts, { side: activeSide, print: printBox, outputFormat: spec.fileFormat }, product, spec)
         : null,
-    [design, printBox, side, product],
+    [activeArt, printBox, activeSide, product],
   );
 
-  // Debounced autosave + re-quote (§12, §16). Skips the hydration pass.
+  // Whole-garment readiness: every designed side must be printable.
+  const orderReady = useMemo(() => {
+    if (!design || design.sides.length === 0) return false;
+    return design.sides.every((s) => {
+      const p = placements[s.side] ?? s.placement;
+      const b = areaBounds(product, s.side, spec);
+      const box = printBoxFor(aspectOf(s.facts), p.sizeFrac, b.maxWidthMm, b.maxHeightMm);
+      const a = analyzeArtwork(s.facts, box, spec);
+      const pf = runPreflight(s.facts, { side: s.side, print: box, outputFormat: spec.fileFormat }, product, spec);
+      return a.quality !== "TOO_LOW" && pf.result === "PASS";
+    });
+  }, [design, placements, product]);
+
+  // Debounced autosave of the active side + design-level fields, then re-quote.
   useEffect(() => {
     if (!design || hydrating.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -138,38 +151,45 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
         await fetch(`/api/designs/${design.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productId, side, colour: colourName, size, placement: clampedPlacement }),
+          body: JSON.stringify({ productId, colour: colourName, size, activeSide, side: activeSide, placement: clampedPlacement }),
         });
         const q = await fetch(`/api/designs/${design.id}/quote?method=PUDO`);
         if (q.ok) setQuote((await q.json()) as PriceBreakdown);
       } catch {
-        /* autosave is best-effort */
+        /* best-effort */
       }
     }, 600);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [design, productId, side, colourName, size, clampedPlacement]);
+  }, [design, productId, colourName, size, activeSide, clampedPlacement]);
 
-  const handleFile = useCallback(
+  const uploadFile = useCallback(
     async (file: File) => {
       setError(null);
       setBusy(true);
       try {
         const form = new FormData();
         form.append("file", file);
+        if (design) {
+          form.append("designId", design.id);
+          form.append("side", activeSide);
+        } else {
+          form.append("side", activeSide);
+        }
         const res = await fetch("/api/designs", { method: "POST", body: form });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Upload failed.");
-        applyDesign(data as DesignDTO);
-        router.replace(`/studio?design=${(data as DesignDTO).id}`);
+        const dto = data as DesignDTO;
+        applyDesign(dto);
+        if (!design) router.replace(`/studio?design=${dto.id}`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "We couldn't process that image.");
       } finally {
         setBusy(false);
       }
     },
-    [applyDesign, router],
+    [design, activeSide, applyDesign, router],
   );
 
   const runProcess = useCallback(
@@ -178,18 +198,23 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
       setProcessing(true);
       setError(null);
       try {
-        const res = await fetch(`/api/designs/${design.id}/${endpoint}`, { method: "POST" });
+        const res = await fetch(`/api/designs/${design.id}/${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ side: activeSide }),
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Processing failed.");
         const dto = data as DesignDTO;
-        applyDesign(dto, dto.lastProcessing);
+        const processedSide = dto.sides.find((s) => s.side === activeSide);
+        applyDesign(dto, processedSide?.lastProcessing ? { side: activeSide, note: processedSide.lastProcessing } : undefined);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Processing failed.");
       } finally {
         setProcessing(false);
       }
     },
-    [design, applyDesign],
+    [design, activeSide, applyDesign],
   );
 
   const addToCart = useCallback(async () => {
@@ -197,11 +222,10 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
     setAdding(true);
     setError(null);
     try {
-      // Persist the latest editor state before ordering.
       await fetch(`/api/designs/${design.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, side, colour: colourName, size, placement: clampedPlacement }),
+        body: JSON.stringify({ productId, colour: colourName, size, activeSide, side: activeSide, placement: clampedPlacement }),
       });
       const res = await fetch("/api/cart", {
         method: "POST",
@@ -216,9 +240,18 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
     } finally {
       setAdding(false);
     }
-  }, [design, productId, side, colourName, size, quantity, clampedPlacement, router]);
+  }, [design, productId, colourName, size, quantity, activeSide, clampedPlacement, router]);
 
-  const canOrder = analysis ? analysis.quality !== "TOO_LOW" && preflight?.result === "PASS" : false;
+  const setPlacementActive = useCallback(
+    (updater: Placement | ((p: Placement) => Placement)) => {
+      setPlacements((prev) => {
+        const cur = prev[activeSide] ?? DEFAULT_PLACEMENT;
+        const next = typeof updater === "function" ? updater(cur) : updater;
+        return { ...prev, [activeSide]: next };
+      });
+    },
+    [activeSide],
+  );
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -228,67 +261,93 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
           Upload anything. We&apos;ll tell you if it&apos;s print-ready.
         </h1>
         <p className="mt-2 max-w-2xl text-muted">
-          Drop in a photo or a logo. We measure the real resolution at your chosen
-          print size — no Photoshop, no DPI knowledge needed.
+          Print a different design on the front and the back. We measure the real
+          resolution at your chosen size — no Photoshop, no DPI knowledge needed.
         </p>
       </header>
 
       {error && (
-        <p className="mb-4 border-2 border-danger bg-danger/10 px-3 py-2 font-semibold text-danger">
-          {error}
-        </p>
+        <p className="mb-4 border-2 border-danger bg-danger/10 px-3 py-2 font-semibold text-danger">{error}</p>
       )}
 
       {!design ? (
-        <Dropzone busy={busy} onFile={handleFile} />
+        <Dropzone busy={busy} onFile={uploadFile} label="Drop your first design here" />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <section className="space-y-6">
-            <div className="card-raw p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-display text-lg font-bold">Your artwork</h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDesign(null);
-                    setPlacement(DEFAULT_PLACEMENT);
-                    setQuote(null);
-                    router.replace("/studio");
-                  }}
-                  className="badge-raw bg-paper hover:bg-accent hover:text-white"
-                >
-                  Replace
-                </button>
-              </div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={design.workingUrl}
-                alt="Uploaded artwork"
-                className="mx-auto max-h-[300px] w-auto border-2 border-ink bg-[repeating-conic-gradient(#e9e5db_0%_25%,#f4f1ea_0%_50%)] bg-[length:24px_24px]"
-              />
-              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs text-muted sm:grid-cols-4">
-                <Meta label="Pixels" value={`${design.facts.widthPx}×${design.facts.heightPx}`} />
-                <Meta label="Type" value={design.facts.format} />
-                <Meta label="Alpha" value={design.facts.isVector ? "vector" : design.facts.hasAlpha ? "yes" : "no"} />
-                <Meta label="Version" value={`v${design.version}`} />
-              </dl>
+            {/* Side tabs */}
+            <div className="flex gap-2">
+              {product.printSides.map((s) => {
+                const has = !!sideArt(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setActiveSide(s)}
+                    className={`flex items-center gap-2 border-2 border-ink px-4 py-2 font-bold capitalize ${
+                      activeSide === s ? "bg-ink text-paper shadow-[3px_3px_0_0_var(--accent)]" : "bg-paper hover:bg-paper-2"
+                    }`}
+                  >
+                    {s.toLowerCase()}
+                    <span className={`badge-raw ${has ? "bg-ok text-white" : "bg-paper text-muted"}`}>
+                      {has ? "designed" : "empty"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <GarmentEditor
-              product={product}
-              area={bounds.area}
-              hex={colour.hex}
-              previewUrl={design.workingUrl}
-              maxWidthMm={bounds.maxWidthMm}
-              maxHeightMm={bounds.maxHeightMm}
-              printBox={printBox}
-              placement={clampedPlacement}
-              onChange={setPlacement}
-            />
+            {activeArt ? (
+              <>
+                <div className="card-raw p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="font-display text-lg font-bold capitalize">{activeSide.toLowerCase()} artwork</h2>
+                    <label className="badge-raw cursor-pointer bg-paper hover:bg-accent hover:text-white">
+                      Replace
+                      <input
+                        type="file"
+                        accept={ACCEPTED_UPLOAD_TYPES.join(",")}
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) uploadFile(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={activeArt.workingUrl}
+                    alt={`${activeSide} artwork`}
+                    className="mx-auto max-h-[280px] w-auto border-2 border-ink bg-[repeating-conic-gradient(#e9e5db_0%_25%,#f4f1ea_0%_50%)] bg-[length:24px_24px]"
+                  />
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs text-muted sm:grid-cols-4">
+                    <Meta label="Pixels" value={`${activeArt.facts.widthPx}×${activeArt.facts.heightPx}`} />
+                    <Meta label="Type" value={activeArt.facts.format} />
+                    <Meta label="Alpha" value={activeArt.facts.isVector ? "vector" : activeArt.facts.hasAlpha ? "yes" : "no"} />
+                    <Meta label="Version" value={`v${activeArt.version}`} />
+                  </dl>
+                </div>
+
+                <GarmentEditor
+                  product={product}
+                  area={bounds.area}
+                  hex={colour.hex}
+                  previewUrl={activeArt.workingUrl}
+                  maxWidthMm={bounds.maxWidthMm}
+                  maxHeightMm={bounds.maxHeightMm}
+                  printBox={printBox}
+                  placement={clampedPlacement}
+                  onChange={setPlacementActive}
+                />
+              </>
+            ) : (
+              <Dropzone busy={busy} onFile={uploadFile} label={`Add your ${activeSide.toLowerCase()} design`} />
+            )}
           </section>
 
           <aside className="space-y-6">
-            {/* Garment */}
             <div className="card-raw p-4">
               <h2 className="mb-3 font-display text-lg font-bold">Garment</h2>
               <Field label="Product">
@@ -297,25 +356,16 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
                   onChange={(e) => {
                     const next = getProductById(e.target.value)!;
                     setProductId(next.id);
-                    if (!next.printSides.includes(side)) setSide(next.printSides[0]);
+                    if (!next.printSides.includes(activeSide)) setActiveSide(next.printSides[0]);
                     if (!next.colours.some((c) => c.name === colourName)) setColourName(next.colours[0].name);
                     if (!next.sizes.includes(size as (typeof next.sizes)[number])) setSize(next.sizes[1] ?? next.sizes[0]);
                   }}
                   className="w-full border-2 border-ink bg-paper px-3 py-2 font-semibold"
                 >
                   {SEED_PRODUCTS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} — {formatZar(p.basePriceCents)}
-                    </option>
+                    <option key={p.id} value={p.id}>{p.name} — {formatZar(p.basePriceCents)}</option>
                   ))}
                 </select>
-              </Field>
-              <Field label="Print side">
-                <div className="flex flex-wrap gap-2">
-                  {product.printSides.map((s) => (
-                    <Toggle key={s} active={side === s} onClick={() => setSide(s)} label={s.replace("_", " ")} />
-                  ))}
-                </div>
               </Field>
               <Field label="Colour">
                 <div className="flex flex-wrap gap-2">
@@ -334,125 +384,103 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Size">
-                  <select
-                    value={size}
-                    onChange={(e) => setSize(e.target.value)}
-                    className="w-full border-2 border-ink bg-paper px-3 py-2 font-semibold"
-                  >
-                    {product.sizes.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
+                  <select value={size} onChange={(e) => setSize(e.target.value)} className="w-full border-2 border-ink bg-paper px-3 py-2 font-semibold">
+                    {product.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </Field>
                 <Field label="Quantity">
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={quantity}
-                    onChange={(e) => setQuantity(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
-                    className="w-full border-2 border-ink bg-paper px-3 py-2 font-semibold"
-                  />
+                  <input type="number" min={1} max={50} value={quantity} onChange={(e) => setQuantity(Math.max(1, Math.min(50, Number(e.target.value) || 1)))} className="w-full border-2 border-ink bg-paper px-3 py-2 font-semibold" />
                 </Field>
               </div>
-              <Field label={`Print size — ${cm(printBox.widthMm)} × ${cm(printBox.heightMm)}`}>
-                <input
-                  type="range"
-                  min={12}
-                  max={100}
-                  value={Math.round(placement.sizeFrac * 100)}
-                  onChange={(e) => setPlacement((p) => ({ ...p, sizeFrac: Number(e.target.value) / 100 }))}
-                  className="w-full accent-[color:var(--accent)]"
-                  aria-label="Print size"
-                />
-              </Field>
-            </div>
-
-            {/* Make it print-ready */}
-            <div className="card-raw p-4">
-              <h2 className="mb-3 font-display text-lg font-bold">Make it print-ready</h2>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={processing}
-                  onClick={() => runProcess("enhance")}
-                  className="border-2 border-ink bg-paper px-3 py-2 text-sm font-bold hover:bg-volt disabled:opacity-50"
-                >
-                  {processing ? "Working…" : "Enhance resolution"}
-                </button>
-                <button
-                  type="button"
-                  disabled={processing}
-                  onClick={() => runProcess("background")}
-                  className="border-2 border-ink bg-paper px-3 py-2 text-sm font-bold hover:bg-volt disabled:opacity-50"
-                >
-                  {processing ? "Working…" : "Remove background"}
-                </button>
-              </div>
-              {note && (
-                <p className="mt-3 border-2 border-ink bg-paper-2 p-2 text-xs text-muted">
-                  <span className="font-mono font-bold text-ink">{note.provider}</span> · {note.note}
-                </p>
+              {activeArt && (
+                <Field label={`${activeSide.toLowerCase()} print size — ${cm(printBox.widthMm)} × ${cm(printBox.heightMm)}`}>
+                  <input
+                    type="range"
+                    min={12}
+                    max={100}
+                    value={Math.round(placement.sizeFrac * 100)}
+                    onChange={(e) => setPlacementActive((p) => ({ ...p, sizeFrac: Number(e.target.value) / 100 }))}
+                    className="w-full accent-[color:var(--accent)]"
+                    aria-label="Print size"
+                  />
+                </Field>
               )}
             </div>
 
-            {/* Quality */}
+            {activeArt && (
+              <div className="card-raw p-4">
+                <h2 className="mb-3 font-display text-lg font-bold">Make the {activeSide.toLowerCase()} print-ready</h2>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={processing} onClick={() => runProcess("enhance")} className="border-2 border-ink bg-paper px-3 py-2 text-sm font-bold hover:bg-volt disabled:opacity-50">
+                    {processing ? "Working…" : "Enhance resolution"}
+                  </button>
+                  <button type="button" disabled={processing} onClick={() => runProcess("background")} className="border-2 border-ink bg-paper px-3 py-2 text-sm font-bold hover:bg-volt disabled:opacity-50">
+                    {processing ? "Working…" : "Remove background"}
+                  </button>
+                </div>
+                {note && note.side === activeSide && (
+                  <p className="mt-3 border-2 border-ink bg-paper-2 p-2 text-xs text-muted">
+                    <span className="font-mono font-bold text-ink">{note.note.provider}</span> · {note.note.note}
+                  </p>
+                )}
+              </div>
+            )}
+
             {analysis && (
               <div className="card-raw p-4">
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="font-display text-lg font-bold">Print quality</h2>
-                  <span className={`badge-raw ${QUALITY_STYLE[analysis.quality].className}`}>
-                    {QUALITY_STYLE[analysis.quality].label}
-                  </span>
+                  <span className={`badge-raw ${QUALITY_STYLE[analysis.quality].className}`}>{QUALITY_STYLE[analysis.quality].label}</span>
                 </div>
                 <p className="text-sm">{analysis.message}</p>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 font-mono text-xs">
                   <Meta label="Effective DPI" value={analysis.isVector ? "∞ (vector)" : `${Math.floor(analysis.effectiveDpi)}`} />
                   <Meta label="Target DPI" value={`${spec.dpi}`} />
                   <Meta label="Production px" value={`${analysis.requiredWidthPx}×${analysis.requiredHeightPx}`} />
-                  <Meta label="Format" value={spec.fileFormat} />
+                  <Meta label="Side" value={activeSide} />
                 </dl>
               </div>
             )}
 
-            {/* Preflight + order */}
             {preflight && (
               <div className="card-raw p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-display text-lg font-bold">Preflight</h2>
-                  <span className={`badge-raw ${preflight.result === "PASS" ? "bg-ok text-white" : "bg-danger text-white"}`}>
-                    {preflight.result}
-                  </span>
+                  <h2 className="font-display text-lg font-bold">Preflight · {activeSide.toLowerCase()}</h2>
+                  <span className={`badge-raw ${preflight.result === "PASS" ? "bg-ok text-white" : "bg-danger text-white"}`}>{preflight.result}</span>
                 </div>
                 <ul className="space-y-2">
                   {preflight.checks.map((c) => (
                     <li key={c.id} className="flex items-start gap-2 text-sm">
                       <span className={`badge-raw shrink-0 ${CHECK_STYLE[c.status]}`}>{c.status}</span>
-                      <span>
-                        <span className="font-semibold">{c.label}. </span>
-                        <span className="text-muted">{c.detail}</span>
-                      </span>
+                      <span><span className="font-semibold">{c.label}. </span><span className="text-muted">{c.detail}</span></span>
                     </li>
                   ))}
                 </ul>
-                {quote && (
-                  <p className="mt-4 flex items-baseline justify-between border-t-2 border-ink pt-3">
-                    <span className="font-semibold">This item</span>
-                    <span className="font-display text-2xl font-bold">
-                      {formatZar(quote.lines[0]?.unitPriceCents ?? 0)}
-                    </span>
-                  </p>
-                )}
-                <button
-                  type="button"
-                  disabled={!canOrder || adding}
-                  onClick={addToCart}
-                  className="btn-raw mt-3 w-full disabled:bg-muted"
-                >
-                  {adding ? "Adding…" : canOrder ? "Add to cart" : "Fix the issues above to continue"}
-                </button>
               </div>
             )}
+
+            {/* Order summary — the whole garment */}
+            <div className="card-raw p-4">
+              <h2 className="mb-2 font-display text-lg font-bold">This garment</h2>
+              <ul className="mb-3 space-y-1 text-sm">
+                {(design.sides.length ? design.sides : []).map((s) => (
+                  <li key={s.side} className="flex justify-between">
+                    <span className="capitalize text-muted">{s.side.toLowerCase()} print</span>
+                    <span className="font-semibold">designed</span>
+                  </li>
+                ))}
+                {design.sides.length === 0 && <li className="text-muted">No sides designed yet.</li>}
+              </ul>
+              {quote && (
+                <p className="flex items-baseline justify-between border-t-2 border-ink pt-3">
+                  <span className="font-semibold">Per garment</span>
+                  <span className="font-display text-2xl font-bold">{formatZar(quote.lines[0]?.unitPriceCents ?? 0)}</span>
+                </p>
+              )}
+              <button type="button" disabled={!orderReady || adding} onClick={addToCart} className="btn-raw mt-3 w-full disabled:bg-muted">
+                {adding ? "Adding…" : orderReady ? "Add to cart" : "Fix low-quality sides to continue"}
+              </button>
+            </div>
           </aside>
         </div>
       )}
@@ -478,21 +506,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Toggle({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`border-2 border-ink px-3 py-1.5 text-sm font-bold capitalize ${
-        active ? "bg-ink text-paper shadow-[3px_3px_0_0_var(--accent)]" : "bg-paper hover:bg-paper-2"
-      }`}
-    >
-      {label.toLowerCase()}
-    </button>
-  );
-}
-
-function Dropzone({ busy, onFile }: { busy: boolean; onFile: (f: File) => void }) {
+function Dropzone({ busy, onFile, label }: { busy: boolean; onFile: (f: File) => void; label: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   return (
@@ -508,14 +522,12 @@ function Dropzone({ busy, onFile }: { busy: boolean; onFile: (f: File) => void }
         const f = e.dataTransfer.files?.[0];
         if (f) onFile(f);
       }}
-      className={`card-raw grid place-items-center px-6 py-16 text-center transition-transform ${dragging ? "translate-x-[-2px] translate-y-[-2px] bg-volt/30" : ""}`}
+      className={`card-raw grid place-items-center px-6 py-14 text-center transition-transform ${dragging ? "translate-x-[-2px] translate-y-[-2px] bg-volt/30" : ""}`}
     >
       <div className="max-w-md">
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center border-2 border-ink bg-accent text-2xl text-white shadow-[3px_3px_0_0_var(--ink)]">↑</div>
-        <h2 className="font-display text-2xl font-bold">Drop your image here</h2>
-        <p className="mt-2 text-muted">
-          JPG, PNG, WEBP or SVG · up to 25MB. A photo straight off your phone is fine — we&apos;ll check if it&apos;s big enough.
-        </p>
+        <h2 className="font-display text-2xl font-bold">{label}</h2>
+        <p className="mt-2 text-muted">JPG, PNG, WEBP or SVG · up to 25MB.</p>
         <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="btn-raw mt-5">
           {busy ? "Uploading…" : "Choose a file"}
         </button>

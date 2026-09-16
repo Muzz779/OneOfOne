@@ -7,6 +7,7 @@ import {
 } from "@/lib/print/placement";
 import type { PrintDimensionsMm } from "@/lib/print/analysis";
 import type { PrintArea, Product } from "@/domain/products";
+import { viewForSide } from "@/domain/garment-shape";
 import { GarmentSilhouette } from "./garment";
 
 type Mode = "move" | "resize" | "rotate";
@@ -181,7 +182,7 @@ export function GarmentEditor({
           className="relative w-full max-w-[340px] select-none"
           style={{ aspectRatio: "100 / 120" }}
         >
-          <GarmentSilhouette category={product.category} hex={hex} />
+          <GarmentSilhouette category={product.category} hex={hex} view={viewForSide(area.side)} />
 
           {/* Printable area boundary (subtle but clear, §11) */}
           <div

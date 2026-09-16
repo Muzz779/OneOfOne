@@ -33,41 +33,41 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ i
           <section className="border-2 border-ink bg-paper-2">
             <h2 className="border-b-2 border-ink px-4 py-2 font-display font-bold">Items &amp; production files</h2>
             <div className="divide-y divide-ink/20">
-              {order.items.map((item) => {
-                const pa = productionAssets.find((a) => a.orderItemId === item.id);
-                const pf = item.preflightResultId ? preflights[item.preflightResultId] : undefined;
-                return (
-                  <div key={item.id} className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-bold">{item.productName} — {item.colour} / {item.size} · qty {item.quantity}</p>
-                        <p className="font-mono text-xs text-muted">
-                          {item.prints.map((p) => `${p.side} ${p.widthMm.toFixed(0)}×${p.heightMm.toFixed(0)}mm`).join(" · ")}
-                        </p>
-                      </div>
-                      {pf && (
-                        <span className={`badge-raw ${pf.result.result === "PASS" ? "bg-ok text-white" : "bg-danger text-white"}`}>
-                          Preflight {pf.result.result}
-                        </span>
-                      )}
-                    </div>
-                    {pa && (
-                      <div className="mt-2 flex flex-wrap items-center gap-3 border-2 border-ink bg-paper p-2 font-mono text-xs">
-                        <span>{order.orderNumber} / {pa.designId.slice(0, 10)} / v{pa.version} / {pa.side}</span>
-                        <span>{pa.widthMm}×{pa.heightMm}mm</span>
-                        <span>{pa.format} {pa.dpi}DPI</span>
-                        <span>{(pa.bytes / 1024).toFixed(0)}KB</span>
-                        <a href={`/api/admin/download?assetId=${pa.id}`} className="ml-auto border-2 border-ink bg-accent px-2 py-1 font-bold text-white">Download</a>
-                      </div>
-                    )}
-                    {pf && pf.result.result === "FAIL" && (
-                      <ul className="mt-2 list-disc pl-5 text-xs text-danger">
-                        {pf.result.failureReasons.map((r, i) => <li key={i}>{r}</li>)}
-                      </ul>
-                    )}
+              {order.items.map((item) => (
+                <div key={item.id} className="p-4">
+                  <p className="font-bold">{item.productName} — {item.colour} / {item.size} · qty {item.quantity}</p>
+                  <div className="mt-2 space-y-2">
+                    {item.prints.map((print) => {
+                      const pa = productionAssets.find((a) => a.orderItemId === item.id && a.side === print.side);
+                      const pf = print.preflightResultId ? preflights[print.preflightResultId] : undefined;
+                      return (
+                        <div key={print.side} className="border-2 border-ink bg-paper p-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-xs font-bold capitalize">{print.side.toLowerCase()} · {print.widthMm.toFixed(0)}×{print.heightMm.toFixed(0)}mm</span>
+                            {pf && (
+                              <span className={`badge-raw ${pf.result.result === "PASS" ? "bg-ok text-white" : "bg-danger text-white"}`}>
+                                Preflight {pf.result.result}
+                              </span>
+                            )}
+                          </div>
+                          {pa && (
+                            <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-xs">
+                              <span>{order.orderNumber} / {pa.designId.slice(0, 10)} / v{pa.version} / {pa.side}</span>
+                              <span>{pa.widthMm}×{pa.heightMm}mm · {pa.format} {pa.dpi}DPI · {(pa.bytes / 1024).toFixed(0)}KB</span>
+                              <a href={`/api/admin/download?assetId=${pa.id}`} className="ml-auto border-2 border-ink bg-accent px-2 py-1 font-bold text-white">Download</a>
+                            </div>
+                          )}
+                          {pf && pf.result.result === "FAIL" && (
+                            <ul className="mt-2 list-disc pl-5 text-xs text-danger">
+                              {pf.result.failureReasons.map((r, i) => <li key={i}>{r}</li>)}
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </section>
 

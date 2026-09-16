@@ -12,9 +12,13 @@ import type { Order, Shipment } from "@/domain/entities";
 
 export interface CustomerOrderView {
   readonly order: Order;
-  /** designId → signed mockup URL (when a mockup has been generated). */
+  /** `${designId}:${side}` → signed mockup URL (when a mockup exists). */
   readonly mockups: Record<string, string>;
   readonly shipment?: Shipment;
+}
+
+export function mockupKey(designId: string, side: string): string {
+  return `${designId}:${side}`;
 }
 
 export async function getCustomerOrder(orderId: string): Promise<CustomerOrderView> {
@@ -26,10 +30,14 @@ export async function getCustomerOrder(orderId: string): Promise<CustomerOrderVi
   const mockups: Record<string, string> = {};
   for (const item of order.items) {
     const design = await repo.getDesign(item.designId);
-    if (design?.mockupAssetId) {
-      const asset = await repo.getAsset(design.mockupAssetId);
-      if (asset) {
-        mockups[design.id] = await storage.signedUrl(asset.bucket, asset.storageKey, 3600);
+    if (!design) continue;
+    for (const print of item.prints) {
+      const sa = design.sides[print.side];
+      if (sa?.mockupAssetId) {
+        const asset = await repo.getAsset(sa.mockupAssetId);
+        if (asset) {
+          mockups[mockupKey(design.id, print.side)] = await storage.signedUrl(asset.bucket, asset.storageKey, 3600);
+        }
       }
     }
   }

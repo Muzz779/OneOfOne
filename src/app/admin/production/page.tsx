@@ -26,17 +26,26 @@ export default async function ProductionQueuePage() {
               <span className={`badge-raw ${allPassed ? "bg-ok text-white" : "bg-danger text-white"}`}>{allPassed ? "Preflight PASS" : "Needs review"}</span>
             </div>
             <div className="space-y-2 p-4">
-              {order.items.map((item) => {
-                const pa = assets.find((a) => a.orderItemId === item.id);
-                return (
-                  <div key={item.id} className="flex flex-wrap items-center gap-3 border-2 border-ink bg-paper p-2 text-sm">
+              {order.items.map((item) => (
+                <div key={item.id} className="border-2 border-ink bg-paper p-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span className="font-bold">{item.productName}</span>
-                    <span className="font-mono text-xs">{item.colour} / {item.size}</span>
-                    {pa && <span className="font-mono text-xs text-muted">{pa.side} · {pa.widthMm}×{pa.heightMm}mm · {pa.dpi}DPI · {pa.format}</span>}
-                    {pa && <a href={`/api/admin/download?assetId=${pa.id}`} className="ml-auto border-2 border-ink bg-accent px-2 py-1 text-xs font-bold text-white">Download file</a>}
+                    <span className="font-mono text-xs">{item.colour} / {item.size} · qty {item.quantity}</span>
                   </div>
-                );
-              })}
+                  <div className="mt-2 space-y-1">
+                    {item.prints.map((print) => {
+                      const pa = assets.find((a) => a.orderItemId === item.id && a.side === print.side);
+                      return (
+                        <div key={print.side} className="flex flex-wrap items-center gap-3 font-mono text-xs">
+                          <span className="capitalize">{print.side.toLowerCase()}</span>
+                          {pa && <span className="text-muted">{pa.widthMm}×{pa.heightMm}mm · {pa.dpi}DPI · {pa.format}</span>}
+                          {pa && <a href={`/api/admin/download?assetId=${pa.id}`} className="ml-auto border-2 border-ink bg-accent px-2 py-1 font-bold text-white">Download</a>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                 <span className="font-mono text-xs text-muted">Job: {jobStatus}</span>
                 <div className="flex items-center gap-2">

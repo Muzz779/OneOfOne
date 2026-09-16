@@ -7,7 +7,7 @@ import { getRepo, getStorage } from "@/server/container";
 import { badRequest, notFound } from "@/server/errors";
 import { newId } from "@/domain/ids";
 import { getProductById } from "@/domain/products";
-import type { Cart, CartItem } from "@/domain/entities";
+import { designedSides, type Cart, type CartItem } from "@/domain/entities";
 import type { DeliveryMethod } from "@/domain/pricing";
 import type { CartItemDTO, CartViewDTO } from "@/lib/dto";
 import { quoteCart } from "./pricing";
@@ -44,6 +44,9 @@ export async function addToCart(input: AddToCartInput): Promise<Cart> {
   const repo = getRepo();
   const design = await repo.getDesign(input.designId);
   if (!design) throw notFound("We couldn't find that design.");
+  if (designedSides(design).length === 0) {
+    throw badRequest("Add artwork to at least one side before adding to cart.");
+  }
   const product = getProductById(design.productId);
   if (!product) throw badRequest("That product is unavailable.");
   if (!product.sizes.includes(input.size as (typeof product.sizes)[number])) {
@@ -118,9 +121,10 @@ export async function cartView(
   const items: CartItemDTO[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const asset = await repo.getAsset(
-      line.design.workingAssetId ?? line.design.originalAssetId,
-    );
+    const sides = designedSides(line.design);
+    const thumbSide = sides.includes(line.design.activeSide) ? line.design.activeSide : sides[0];
+    const sa = thumbSide ? line.design.sides[thumbSide] : undefined;
+    const asset = sa ? await repo.getAsset(sa.workingAssetId) : undefined;
     const thumbUrl = asset
       ? await storage.signedUrl(asset.bucket, asset.storageKey, 3600)
       : "";

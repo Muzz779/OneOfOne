@@ -164,9 +164,11 @@ export async function productionQueue(): Promise<ProductionQueueEntry[]> {
     const assets = await repo.listProductionAssetsByOrder(order.id);
     let allPassed = true;
     for (const item of order.items) {
-      if (item.preflightResultId) {
-        const pf = await repo.getPreflight(item.preflightResultId);
-        if (pf && pf.result.result === "FAIL") allPassed = false;
+      for (const print of item.prints) {
+        if (print.preflightResultId) {
+          const pf = await repo.getPreflight(print.preflightResultId);
+          if (pf && pf.result.result === "FAIL") allPassed = false;
+        }
       }
     }
     entries.push({ order, assets, jobStatus: job.status, allPassed });
@@ -203,9 +205,11 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail> {
   const productionAssets = await repo.listProductionAssetsByOrder(order.id);
   const preflights: Record<string, PreflightResultRecord> = {};
   for (const item of order.items) {
-    if (item.preflightResultId) {
-      const pf = await repo.getPreflight(item.preflightResultId);
-      if (pf) preflights[item.preflightResultId] = pf;
+    for (const print of item.prints) {
+      if (print.preflightResultId) {
+        const pf = await repo.getPreflight(print.preflightResultId);
+        if (pf) preflights[print.preflightResultId] = pf;
+      }
     }
   }
   const refunds = await repo.listRefunds(order.id);

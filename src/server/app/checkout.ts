@@ -75,7 +75,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     colour: line.colour,
     size: line.size,
     quantity: line.quantity,
-    prints: [line.print],
+    prints: line.prints.map((p) => ({ ...p })),
     unitPriceCents: breakdown.lines[i].unitPriceCents,
   }));
 
