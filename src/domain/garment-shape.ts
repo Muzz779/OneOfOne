@@ -60,21 +60,27 @@ const HOODIE_HEM = "M23 104 L77 104";
 const HOODIE_CUFF_L = "M2 37 L12 42";
 const HOODIE_CUFF_R = "M98 37 L88 42";
 
-// --- Jacket / Puffer -------------------------------------------------------
+// --- Jacket / Puffer (long sleeves) ----------------------------------------
+// Long sleeves hang alongside the torso down to cuffs near the hem.
 const JACKET_BODY =
-  "M40 15 L60 15 L74 17 L94 24 L99 38 L89 49 L78 42 L78 112 L22 112 L22 42 L11 49 L1 38 L6 24 L26 17 Z";
-const JACKET_COLLAR = "M40 15 L46 23 L50 19 L54 23 L60 15";
-const JACKET_STAND_COLLAR = "M42 15 L44 8 L56 8 L58 15";
-const JACKET_ZIP = "M50 19 L50 112";
-const JACKET_ZIP_PUFFER = "M50 15 L50 112";
-const JACKET_POCKET_L = "M27 80 L41 80 L41 95 L27 95 Z";
-const JACKET_POCKET_R = "M59 80 L73 80 L73 95 L59 95 Z";
-const JACKET_CUFF_L = "M1 38 L11 43";
-const JACKET_CUFF_R = "M99 38 L89 43";
-const JACKET_HEM = "M22 106 L78 106";
-const JACKET_YOKE_BACK = "M26 27 L74 27";
-const JACKET_BACKSEAM = "M50 27 L50 112";
-const PUFFER_QUILT = [46, 60, 74, 88, 100].map((y) => `M22 ${y} L78 ${y}`);
+  "M42 14 C46 19 54 19 58 14 L72 14 L91 19 L96 92 L83 96 L76 44 L76 112 L24 112 L24 44 L17 96 L4 92 L9 19 L28 14 Z";
+const JACKET_COLLAR = "M42 14 L47 21 L50 17 L53 21 L58 14";
+const JACKET_STAND_COLLAR = "M43 14 L45 8 L55 8 L57 14";
+const JACKET_ZIP = "M50 17 L50 112";
+const JACKET_ZIP_PUFFER = "M50 14 L50 112";
+const JACKET_POCKET_L = "M28 84 L42 84 L42 98 L28 98 Z";
+const JACKET_POCKET_R = "M58 84 L72 84 L72 98 L58 98 Z";
+const JACKET_CUFF_L = "M4 88 L17 92";
+const JACKET_CUFF_R = "M96 88 L83 92";
+const JACKET_HEM = "M24 106 L76 106";
+const JACKET_YOKE_BACK = "M28 24 L72 24";
+const JACKET_BACKSEAM = "M50 24 L50 112";
+// Quilting: torso rows + a few on each long sleeve.
+const PUFFER_QUILT = [
+  ...[40, 56, 72, 88, 100].map((y) => `M24 ${y} L76 ${y}`),
+  ...[34, 50, 66, 82].map((y) => `M6 ${y} L21 ${y}`),
+  ...[34, 50, 66, 82].map((y) => `M79 ${y} L94 ${y}`),
+];
 
 export function garmentPaths(
   kind: GarmentKind,

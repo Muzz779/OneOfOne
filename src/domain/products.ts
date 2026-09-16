@@ -68,22 +68,32 @@ const JACKET_COLOURS: readonly GarmentColour[] = [
   { name: "Olive", hex: "#4B5320" },
 ];
 
-/** Left/right sleeve printable areas (small, upper-sleeve). */
-function sleeveArea(side: "LEFT_SLEEVE" | "RIGHT_SLEEVE"): PrintArea {
+/**
+ * Left/right sleeve printable areas. Short-sleeve garments (tee, hoodie) print
+ * near the top of the sleeve; long-sleeve garments (jackets) print down the arm.
+ */
+function sleeveArea(side: "LEFT_SLEEVE" | "RIGHT_SLEEVE", kind: "short" | "long"): PrintArea {
   const left = side === "LEFT_SLEEVE";
+  const box =
+    kind === "long"
+      ? left
+        ? { xPct: 0.05, yPct: 0.3, widthPct: 0.11, heightPct: 0.2 }
+        : { xPct: 0.84, yPct: 0.3, widthPct: 0.11, heightPct: 0.2 }
+      : left
+        ? { xPct: 0.06, yPct: 0.21, widthPct: 0.14, heightPct: 0.12 }
+        : { xPct: 0.8, yPct: 0.21, widthPct: 0.14, heightPct: 0.12 };
   return {
     side,
     label: left ? "Left sleeve" : "Right sleeve",
-    maxWidthMm: 90,
-    maxHeightMm: 110,
-    mockupBox: left
-      ? { xPct: 0.06, yPct: 0.21, widthPct: 0.14, heightPct: 0.12 }
-      : { xPct: 0.8, yPct: 0.21, widthPct: 0.14, heightPct: 0.12 },
+    maxWidthMm: kind === "long" ? 100 : 90,
+    maxHeightMm: kind === "long" ? 320 : 110,
+    mockupBox: box,
   };
 }
 
 const SLEEVE_SIDES: readonly PrintSide[] = ["LEFT_SLEEVE", "RIGHT_SLEEVE"];
-const SLEEVE_AREAS: readonly PrintArea[] = [sleeveArea("LEFT_SLEEVE"), sleeveArea("RIGHT_SLEEVE")];
+const SHORT_SLEEVE_AREAS: readonly PrintArea[] = [sleeveArea("LEFT_SLEEVE", "short"), sleeveArea("RIGHT_SLEEVE", "short")];
+const LONG_SLEEVE_AREAS: readonly PrintArea[] = [sleeveArea("LEFT_SLEEVE", "long"), sleeveArea("RIGHT_SLEEVE", "long")];
 
 export const SEED_PRODUCTS: readonly Product[] = [
   {
@@ -101,7 +111,7 @@ export const SEED_PRODUCTS: readonly Product[] = [
     printAreas: [
       { side: "FRONT", label: "Front (A4)", maxWidthMm: 210, maxHeightMm: 297, mockupBox: { xPct: 0.31, yPct: 0.24, widthPct: 0.38, heightPct: 0.46 } },
       { side: "BACK", label: "Back (A3)", maxWidthMm: 297, maxHeightMm: 420, mockupBox: { xPct: 0.28, yPct: 0.2, widthPct: 0.44, heightPct: 0.56 } },
-      ...SLEEVE_AREAS,
+      ...SHORT_SLEEVE_AREAS,
     ],
     active: true,
   },
@@ -120,7 +130,7 @@ export const SEED_PRODUCTS: readonly Product[] = [
     printAreas: [
       { side: "FRONT", label: "Front (A4, above pocket)", maxWidthMm: 210, maxHeightMm: 250, mockupBox: { xPct: 0.33, yPct: 0.26, widthPct: 0.34, heightPct: 0.34 } },
       { side: "BACK", label: "Back (A3)", maxWidthMm: 297, maxHeightMm: 420, mockupBox: { xPct: 0.28, yPct: 0.2, widthPct: 0.44, heightPct: 0.56 } },
-      ...SLEEVE_AREAS,
+      ...SHORT_SLEEVE_AREAS,
     ],
     active: true,
   },
@@ -139,7 +149,7 @@ export const SEED_PRODUCTS: readonly Product[] = [
     printAreas: [
       { side: "FRONT", label: "Front (A5, chest)", maxWidthMm: 180, maxHeightMm: 240, mockupBox: { xPct: 0.34, yPct: 0.26, widthPct: 0.32, heightPct: 0.4 } },
       { side: "BACK", label: "Back (A3)", maxWidthMm: 297, maxHeightMm: 420, mockupBox: { xPct: 0.27, yPct: 0.22, widthPct: 0.46, heightPct: 0.56 } },
-      ...SLEEVE_AREAS,
+      ...LONG_SLEEVE_AREAS,
     ],
     active: true,
   },
@@ -158,7 +168,7 @@ export const SEED_PRODUCTS: readonly Product[] = [
     printAreas: [
       { side: "FRONT", label: "Front (A5, chest)", maxWidthMm: 180, maxHeightMm: 240, mockupBox: { xPct: 0.34, yPct: 0.26, widthPct: 0.32, heightPct: 0.4 } },
       { side: "BACK", label: "Back (A3)", maxWidthMm: 297, maxHeightMm: 420, mockupBox: { xPct: 0.27, yPct: 0.22, widthPct: 0.46, heightPct: 0.56 } },
-      ...SLEEVE_AREAS,
+      ...LONG_SLEEVE_AREAS,
     ],
     active: true,
   },
@@ -177,7 +187,7 @@ export const SEED_PRODUCTS: readonly Product[] = [
     printAreas: [
       { side: "FRONT", label: "Front (A5, chest)", maxWidthMm: 170, maxHeightMm: 220, mockupBox: { xPct: 0.35, yPct: 0.26, widthPct: 0.3, heightPct: 0.34 } },
       { side: "BACK", label: "Back (A3)", maxWidthMm: 297, maxHeightMm: 420, mockupBox: { xPct: 0.27, yPct: 0.22, widthPct: 0.46, heightPct: 0.54 } },
-      ...SLEEVE_AREAS,
+      ...LONG_SLEEVE_AREAS,
     ],
     active: true,
   },
