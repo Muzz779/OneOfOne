@@ -53,16 +53,16 @@ function SiteHeader() {
           </span>
         </Link>
         <nav className="flex items-center gap-1 text-sm font-semibold sm:gap-3">
-          <Link
-            href="/studio"
-            className="px-2 py-1 hover:underline underline-offset-4"
-          >
+          <Link href="/products" className="hidden px-2 py-1 hover:underline underline-offset-4 sm:inline">
+            Shop
+          </Link>
+          <Link href="/studio" className="px-2 py-1 hover:underline underline-offset-4">
             Studio
           </Link>
-          <Link
-            href="/studio"
-            className="btn-raw px-3 py-1.5 text-sm"
-          >
+          <Link href="/cart" className="px-2 py-1 hover:underline underline-offset-4">
+            Cart
+          </Link>
+          <Link href="/studio" className="btn-raw px-3 py-1.5 text-sm">
             Start a design
           </Link>
         </nav>
@@ -74,13 +74,15 @@ function SiteHeader() {
 function SiteFooter() {
   return (
     <footer className="border-t-2 border-ink bg-paper-2">
-      <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-6 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-6 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
         <span className="font-mono">
           OneOfOne · Custom apparel, printed in South Africa
         </span>
-        <span className="font-mono text-xs">
-          Preview build · prices shown are indicative
-        </span>
+        <nav className="flex items-center gap-4 font-semibold">
+          <Link href="/products" className="hover:underline underline-offset-4">Shop</Link>
+          <Link href="/terms" className="hover:underline underline-offset-4">Terms</Link>
+          <Link href="/privacy" className="hover:underline underline-offset-4">Privacy</Link>
+        </nav>
       </div>
     </footer>
   );

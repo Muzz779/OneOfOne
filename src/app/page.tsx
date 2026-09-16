@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SEED_PRODUCTS } from "@/domain/products";
+import { Reveal } from "@/components/ui/reveal";
 
 const STEPS = [
   {
@@ -84,12 +85,14 @@ export default function Home() {
           The hard part, handled.
         </h2>
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map((s) => (
-            <div key={s.n} className="card-raw p-4">
-              <span className="font-mono text-sm text-accent">{s.n}</span>
-              <h3 className="mt-1 font-display text-lg font-bold">{s.title}</h3>
-              <p className="mt-1 text-sm text-muted">{s.body}</p>
-            </div>
+          {STEPS.map((s, i) => (
+            <Reveal key={s.n} delay={i * 0.06}>
+              <div className="card-raw h-full p-4">
+                <span className="font-mono text-sm text-accent">{s.n}</span>
+                <h3 className="mt-1 font-display text-lg font-bold">{s.title}</h3>
+                <p className="mt-1 text-sm text-muted">{s.body}</p>
+              </div>
+            </Reveal>
           ))}
         </div>
       </section>
