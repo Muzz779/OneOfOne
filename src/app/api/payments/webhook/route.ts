@@ -13,8 +13,7 @@ export async function POST(req: Request) {
     if (!rl.ok) throw tooMany();
 
     const raw = await req.text();
-    const signature = req.headers.get("x-oneofone-signature");
-    const outcome = await handlePaymentWebhook(raw, signature);
+    const outcome = await handlePaymentWebhook(raw, req.headers);
     return json(outcome, { status: outcome.ok ? 200 : 400 });
   } catch (e) {
     return fail(e);

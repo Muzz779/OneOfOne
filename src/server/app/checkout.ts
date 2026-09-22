@@ -8,6 +8,7 @@
 
 import "server-only";
 import { getDelivery, getPayment, getRepo } from "@/server/container";
+import { siteUrl } from "@/server/env";
 import { getCurrentUser } from "@/server/session";
 import { badRequest, conflict, notFound } from "@/server/errors";
 import { formatOrderNumber, newId } from "@/domain/ids";
@@ -105,11 +106,15 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   await delivery.quote({ method: input.deliveryMethod, address: input.deliveryAddress });
 
   // Open payment with the provider (§19).
+  const base = siteUrl();
   const checkout = await payment.createCheckout({
     orderId: order.id,
     amountCents: breakdown.totalCents,
     currency: "ZAR",
     idempotencyKey: order.id,
+    successUrl: `${base}/orders/${order.id}`,
+    cancelUrl: `${base}/checkout`,
+    failureUrl: `${base}/orders/${order.id}`,
   });
   const paymentRecord: Payment = {
     id: newId("pay"),

@@ -46,17 +46,18 @@ export async function simulateProviderWebhook(
     eventId: newId("pay"),
   });
   const signature = provider.signPayload(body);
-  return handlePaymentWebhook(body, signature);
+  const headers = new Headers({ "x-oneofone-signature": signature });
+  return handlePaymentWebhook(body, headers);
 }
 
 export async function handlePaymentWebhook(
   rawBody: string,
-  signature: string | null,
+  headers: Headers,
 ): Promise<WebhookOutcome> {
   const provider = getPayment();
   const repo = getRepo();
 
-  if (!signature || !provider.verifyWebhookSignature(rawBody, signature)) {
+  if (!provider.verifyWebhookSignature(rawBody, headers)) {
     return { ok: false, reason: "invalid_signature" };
   }
 
@@ -68,10 +69,15 @@ export async function handlePaymentWebhook(
     return { ok: true, duplicate: true };
   }
 
-  const payment = await repo.getPaymentByProviderRef(event.providerRef);
-  if (!payment) return { ok: false, reason: "unknown_payment" };
-  const order = await repo.getOrder(payment.orderId);
-  if (!order) return { ok: false, reason: "unknown_order" };
+  // Resolve the order (Yoco carries orderId in metadata; mock in the body),
+  // then its payment. Fall back to the provider reference.
+  let order = event.orderId ? await repo.getOrder(event.orderId) : undefined;
+  let payment = order?.paymentId ? await repo.getPayment(order.paymentId) : undefined;
+  if (!payment && event.providerRef) {
+    payment = await repo.getPaymentByProviderRef(event.providerRef);
+    if (payment && !order) order = await repo.getOrder(payment.orderId);
+  }
+  if (!payment || !order) return { ok: false, reason: "unknown_payment" };
 
   const now = new Date().toISOString();
 

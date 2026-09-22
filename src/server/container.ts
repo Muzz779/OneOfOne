@@ -9,7 +9,7 @@
 
 import "server-only";
 import { getActivePrinterSpec, type PrinterSpec } from "@/config/printer";
-import { isSupabaseConfigured } from "./env";
+import { isSupabaseConfigured, isYocoConfigured } from "./env";
 import { InMemoryRepo, type Repo } from "./repo";
 import { SupabaseRepo } from "./repo-supabase";
 import { LocalDiskStorage } from "./storage/local";
@@ -21,7 +21,7 @@ import {
   DevColorKeyRemover,
   type BackgroundRemovalService,
 } from "./services/background";
-import { MockYocoProvider, type PaymentProvider } from "./services/payment";
+import { MockYocoProvider, YocoProvider, type PaymentProvider } from "./services/payment";
 import { MockPudoDelivery, type DeliveryService } from "./services/delivery";
 import {
   MockNotificationService,
@@ -59,7 +59,7 @@ function build(): Container {
     image: new SharpImageProcessor(),
     enhancer: new DevUpscaleEnhancer(),
     bgRemover: new DevColorKeyRemover(),
-    payment: new MockYocoProvider(),
+    payment: isYocoConfigured() ? new YocoProvider() : new MockYocoProvider(),
     delivery: new MockPudoDelivery(),
     notifier: new MockNotificationService(),
   };

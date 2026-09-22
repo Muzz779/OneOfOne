@@ -17,3 +17,21 @@ export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?
 export function isSupabaseConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
 }
+
+// ── Yoco payments ───────────────────────────────────────────────────────────
+export const YOCO_SECRET_KEY = process.env.YOCO_SECRET_KEY ?? "";
+export const YOCO_WEBHOOK_SECRET = process.env.YOCO_WEBHOOK_SECRET ?? "";
+
+/** True when real Yoco keys are configured (else the mock gateway is used). */
+export function isYocoConfigured(): boolean {
+  return Boolean(YOCO_SECRET_KEY && YOCO_WEBHOOK_SECRET);
+}
+
+/** Absolute site origin for building payment return URLs. */
+export function siteUrl(): string {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL;
+  if (explicit) return explicit.replace(/\/$/, "");
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (vercel) return `https://${vercel}`;
+  return "http://localhost:3000";
+}

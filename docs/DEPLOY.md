@@ -57,10 +57,30 @@ It's idempotent — it only seeds if inventory is empty.
 - `/account/register` — creates a real Supabase Auth user; orders you place while
   signed in appear under `/account`.
 
-## What's still mock (swap when ready)
-Payments (Yoco), delivery (PUDO) and email/SMS notifications are still behind
-their service interfaces with dev mocks. Wire the real providers in
-`src/server/container.ts`; the rest of the app doesn't change.
+## Enable real Yoco payments
+The app ships with a mock gateway. To take real card payments with Yoco:
+1. Sign up at [yoco.com](https://www.yoco.com) and open **Developers** in the
+   dashboard. Copy your **secret key** (start with the test key `sk_test_...`).
+2. **Register the webhook**: point it at `https://YOUR-DOMAIN/api/payments/webhook`.
+   Yoco gives you a **signing secret** (`whsec_...`). You can do this in the
+   dashboard, or via the API:
+   ```bash
+   curl -X POST https://payments.yoco.com/api/webhooks \
+     -H "Authorization: Bearer $YOCO_SECRET_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"name":"oneofone","url":"https://YOUR-DOMAIN/api/payments/webhook"}'
+   # → the response's "secret" (whsec_...) is your YOCO_WEBHOOK_SECRET
+   ```
+3. In Vercel env vars set `YOCO_SECRET_KEY`, `YOCO_WEBHOOK_SECRET`, and
+   `NEXT_PUBLIC_SITE_URL` (your production URL). Redeploy.
+4. Checkout now redirects to Yoco's hosted page; on success Yoco calls the
+   webhook (signature-verified, idempotent) which marks the order paid and kicks
+   off production. Test with a Yoco test card, then switch to live keys.
+
+## Still mock (swap when ready)
+Delivery (PUDO) and email/SMS notifications remain behind their service
+interfaces with dev mocks. Wire real providers in `src/server/container.ts`; the
+rest of the app doesn't change.
 
 ## Custom domain & production checklist
 - Point your domain at Vercel; set `NEXT_PUBLIC_SUPPORT_WHATSAPP` to your real
