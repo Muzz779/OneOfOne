@@ -74,4 +74,21 @@ export class SupabaseStorage implements StorageService {
   verifySignature(): boolean {
     return false;
   }
+
+  supportsDirectUpload(): boolean {
+    return true;
+  }
+
+  async createSignedUploadUrl(
+    bucket: StorageBucket,
+    key: string,
+  ): Promise<{ uploadUrl: string }> {
+    const { data, error } = await supabaseAdmin()
+      .storage.from(bucket)
+      .createSignedUploadUrl(key, { upsert: true });
+    if (error || !data) {
+      throw new Error(`Signed upload URL failed: ${error?.message ?? "unknown"}`);
+    }
+    return { uploadUrl: data.signedUrl };
+  }
 }

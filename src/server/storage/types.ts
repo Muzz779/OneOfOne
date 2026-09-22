@@ -47,4 +47,17 @@ export interface StorageService {
   ): boolean;
 
   contentTypeFor(key: string): string;
+
+  /**
+   * Whether the client can upload directly to storage (bypassing the app
+   * server). Required in production to avoid the serverless request-body limit
+   * on large, high-resolution artwork.
+   */
+  supportsDirectUpload(): boolean;
+
+  /** A one-time signed URL the browser PUTs the file to (direct upload). */
+  createSignedUploadUrl(
+    bucket: StorageBucket,
+    key: string,
+  ): Promise<{ uploadUrl: string }>;
 }

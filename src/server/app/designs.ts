@@ -8,6 +8,7 @@
  */
 
 import "server-only";
+import { randomUUID } from "node:crypto";
 import {
   getEnhancer,
   getBgRemover,
@@ -22,24 +23,11 @@ import { DEFAULT_PLACEMENT } from "@/lib/print/placement";
 import { designPrintBox } from "@/lib/print/design-calc";
 import { mmToPx } from "@/lib/print/units";
 import { getProductById, SEED_PRODUCTS, type PrintSide } from "@/domain/products";
-import type { Design, DesignAsset, SideArtwork, StorageBucket } from "@/domain/entities";
-import { designedSides } from "@/domain/entities";
-import type { ImageFacts } from "@/lib/print/analysis";
+import { designedSides, type Design, type DesignAsset, type SideArtwork } from "@/domain/entities";
 import type { DesignDTO, ProcessingNote, SideArtworkDTO } from "@/lib/dto";
 
 const ACCEPTED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/svg+xml"]);
 const MAX_BYTES = 25 * 1024 * 1024;
-
-function extFor(format: ImageFacts["format"]): string {
-  switch (format) {
-    case "JPEG": return "jpg";
-    case "PNG": return "png";
-    case "WEBP": return "webp";
-    case "SVG": return "svg";
-    case "TIFF": return "tiff";
-    default: return "bin";
-  }
-}
 
 async function signedWorkingUrl(sa: SideArtwork): Promise<string> {
   const repo = getRepo();
@@ -97,94 +85,155 @@ export interface UploadInput {
   readonly side?: PrintSide;
 }
 
-async function storeOriginal(
-  designId: string,
-  side: PrintSide,
-  buffer: Buffer,
-  mimeType: string,
-): Promise<{ asset: DesignAsset; facts: ImageFacts }> {
-  const repo = getRepo();
-  const storage = getStorage();
-  const image = getImageProcessor();
+function extFromMime(mime: string): string {
+  switch (mime) {
+    case "image/jpeg": return "jpg";
+    case "image/png": return "png";
+    case "image/webp": return "webp";
+    case "image/svg+xml": return "svg";
+    default: return "bin";
+  }
+}
 
-  const { facts, hash } = await image.measure(buffer);
+function uploadKey(designId: string, side: PrintSide, mime: string): string {
+  const suffix = randomUUID().slice(0, 8);
+  return `${designId}/${side.toLowerCase()}/original-${suffix}.${extFromMime(mime)}`;
+}
+
+/**
+ * Shared: measure already-stored bytes, record the ORIGINAL asset (pointing at
+ * `key`), and create or update the design's side. Preserves the original (§4).
+ */
+async function finalizeArtwork(opts: {
+  designId: string;
+  side: PrintSide;
+  key: string;
+  buffer: Buffer;
+  userId?: string;
+}): Promise<DesignDTO> {
+  const repo = getRepo();
+  const image = getImageProcessor();
+  const { facts, hash } = await image.measure(opts.buffer);
   if (facts.widthPx <= 0 || facts.heightPx <= 0) {
     throw badRequest("We couldn't read that image. Try a different JPG, PNG, WEBP or SVG.");
   }
-  const ext = extFor(facts.format);
-  const bucket: StorageBucket = "originals";
-  const key = `${designId}/${side.toLowerCase()}/original.${ext}`;
-  const { bytes } = await storage.put(bucket, key, buffer, mimeType);
-
   const asset: DesignAsset = {
     id: newId("ast"),
-    designId,
+    designId: opts.designId,
     kind: "ORIGINAL",
-    bucket,
-    storageKey: key,
+    bucket: "originals",
+    storageKey: opts.key,
     format: facts.format,
     widthPx: facts.widthPx,
     heightPx: facts.heightPx,
-    bytes,
+    bytes: opts.buffer.byteLength,
     hash,
     createdAt: new Date().toISOString(),
   };
   await repo.addAsset(asset);
-  return { asset, facts };
-}
 
-export async function uploadArtwork(input: UploadInput): Promise<DesignDTO> {
-  validateUpload(input.mimeType, input.buffer.byteLength);
-  const repo = getRepo();
   const now = new Date().toISOString();
-
-  if (input.designId) {
-    const design = await repo.getDesign(input.designId);
-    if (!design) throw notFound("We couldn't find that design.");
-    const side = input.side ?? design.activeSide;
-    const { asset, facts } = await storeOriginal(design.id, side, input.buffer, input.mimeType);
-    design.sides[side] = {
-      facts,
-      placement: DEFAULT_PLACEMENT,
-      version: 1,
-      originalAssetId: asset.id,
-      workingAssetId: asset.id,
-    };
-    design.activeSide = side;
-    design.updatedAt = now;
-    await repo.saveDesign(design);
-    await repo.recordEvent({ id: newId("des"), type: "UPLOAD", at: now, props: { side } });
-    return toDesignDTO(design);
+  const sa: SideArtwork = {
+    facts,
+    placement: DEFAULT_PLACEMENT,
+    version: 1,
+    originalAssetId: asset.id,
+    workingAssetId: asset.id,
+  };
+  const existing = await repo.getDesign(opts.designId);
+  if (existing) {
+    existing.sides[opts.side] = sa;
+    existing.activeSide = opts.side;
+    existing.updatedAt = now;
+    await repo.saveDesign(existing);
+    await repo.recordEvent({ id: newId("des"), type: "UPLOAD", at: now, props: { side: opts.side } });
+    return toDesignDTO(existing);
   }
-
-  // New design.
-  const designId = newId("des");
-  const side = input.side ?? "FRONT";
-  const { asset, facts } = await storeOriginal(designId, side, input.buffer, input.mimeType);
   const first = SEED_PRODUCTS[0];
   const design: Design = {
-    id: designId,
-    userId: input.userId,
+    id: opts.designId,
+    userId: opts.userId,
     productId: first.id,
     colour: first.colours[0].name,
     size: "M",
-    sides: {
-      [side]: {
-        facts,
-        placement: DEFAULT_PLACEMENT,
-        version: 1,
-        originalAssetId: asset.id,
-        workingAssetId: asset.id,
-      },
-    },
-    activeSide: side,
+    sides: { [opts.side]: sa },
+    activeSide: opts.side,
     status: "DRAFT",
     createdAt: now,
     updatedAt: now,
   };
   await repo.createDesign(design);
-  await repo.recordEvent({ id: newId("des"), type: "UPLOAD", at: now, props: { side } });
+  await repo.recordEvent({ id: newId("des"), type: "UPLOAD", at: now, props: { side: opts.side } });
   return toDesignDTO(design);
+}
+
+/** Multipart upload (dev/mock, small files): bytes pass through the server. */
+export async function uploadArtwork(input: UploadInput): Promise<DesignDTO> {
+  validateUpload(input.mimeType, input.buffer.byteLength);
+  const storage = getStorage();
+  const existing = input.designId ? await getRepo().getDesign(input.designId) : undefined;
+  const side = input.side ?? existing?.activeSide ?? "FRONT";
+  const designId = input.designId ?? newId("des");
+  const key = uploadKey(designId, side, input.mimeType);
+  await storage.put("originals", key, input.buffer, input.mimeType);
+  return finalizeArtwork({ designId, side, key, buffer: input.buffer, userId: input.userId });
+}
+
+export interface PrepareUploadInput {
+  readonly contentType: string;
+  readonly side?: PrintSide;
+  readonly designId?: string;
+  readonly userId?: string;
+}
+
+export interface PrepareUploadResult {
+  readonly direct: boolean;
+  readonly designId: string;
+  readonly side: PrintSide;
+  readonly key: string;
+  readonly uploadUrl?: string;
+}
+
+/**
+ * Prepare a direct-to-storage upload (production — avoids the serverless body
+ * limit) or signal the multipart fallback (dev/mock).
+ */
+export async function prepareUpload(input: PrepareUploadInput): Promise<PrepareUploadResult> {
+  if (!ACCEPTED_MIME.has(input.contentType)) {
+    throw badRequest("That file type isn't supported. Upload a JPG, PNG, WEBP or SVG.");
+  }
+  const storage = getStorage();
+  const existing = input.designId ? await getRepo().getDesign(input.designId) : undefined;
+  const side = input.side ?? existing?.activeSide ?? "FRONT";
+  const designId = input.designId ?? newId("des");
+  const key = uploadKey(designId, side, input.contentType);
+  if (storage.supportsDirectUpload()) {
+    const { uploadUrl } = await storage.createSignedUploadUrl("originals", key);
+    return { direct: true, designId, side, key, uploadUrl };
+  }
+  return { direct: false, designId, side, key };
+}
+
+export interface RegisterUploadInput {
+  readonly designId: string;
+  readonly side: PrintSide;
+  readonly key: string;
+  readonly userId?: string;
+}
+
+/** After a direct upload, download + measure the object and register the design. */
+export async function registerUploadedArtwork(input: RegisterUploadInput): Promise<DesignDTO> {
+  const storage = getStorage();
+  let buffer: Buffer;
+  try {
+    buffer = await storage.get("originals", input.key);
+  } catch {
+    throw badRequest("We couldn't find the uploaded file. Please try again.");
+  }
+  if (buffer.byteLength > MAX_BYTES) {
+    throw badRequest("That file is too large. Please keep uploads under 25MB.");
+  }
+  return finalizeArtwork({ designId: input.designId, side: input.side, key: input.key, buffer, userId: input.userId });
 }
 
 export interface SavePatch {

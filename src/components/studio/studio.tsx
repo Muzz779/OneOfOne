@@ -169,20 +169,47 @@ export function Studio({ initialDesignId }: { initialDesignId?: string }) {
       setError(null);
       setBusy(true);
       try {
-        const form = new FormData();
-        form.append("file", file);
-        if (design) {
-          form.append("designId", design.id);
-          form.append("side", activeSide);
+        // 1. Ask the server how to upload (direct-to-storage in prod, or via us).
+        const prep = await fetch("/api/uploads/prepare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contentType: file.type, side: activeSide, designId: design?.id }),
+        }).then((r) => r.json());
+        if (prep.error) throw new Error(prep.error);
+
+        let dto: DesignDTO;
+        if (prep.direct) {
+          // 2. Upload the file straight to storage — no serverless body limit.
+          const put = await fetch(prep.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": file.type, "x-upsert": "true" },
+            body: file,
+          });
+          if (!put.ok) throw new Error("We couldn't upload that image. Please try again.");
+          // 3. Register the uploaded object.
+          const res = await fetch("/api/designs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ designId: prep.designId, side: prep.side, key: prep.key }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? "Upload failed.");
+          dto = data as DesignDTO;
         } else {
+          // Multipart fallback (local dev / disk storage).
+          const form = new FormData();
+          form.append("file", file);
+          if (design) form.append("designId", design.id);
           form.append("side", activeSide);
+          const res = await fetch("/api/designs", { method: "POST", body: form });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? "Upload failed.");
+          dto = data as DesignDTO;
         }
-        const res = await fetch("/api/designs", { method: "POST", body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Upload failed.");
-        const dto = data as DesignDTO;
+
+        const wasNew = !design;
         applyDesign(dto);
-        if (!design) router.replace(`/studio?design=${dto.id}`);
+        if (wasNew) router.replace(`/studio?design=${dto.id}`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "We couldn't process that image.");
       } finally {

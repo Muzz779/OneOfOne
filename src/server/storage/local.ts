@@ -107,4 +107,12 @@ export class LocalDiskStorage implements StorageService {
   contentTypeFor(key: string): string {
     return CONTENT_TYPES[path.extname(key).toLowerCase()] ?? "application/octet-stream";
   }
+
+  supportsDirectUpload(): boolean {
+    return false;
+  }
+
+  async createSignedUploadUrl(): Promise<{ uploadUrl: string }> {
+    throw new Error("Local disk storage does not support direct uploads.");
+  }
 }
