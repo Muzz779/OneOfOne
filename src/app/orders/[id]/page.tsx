@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCustomerOrder, mockupKey } from "@/server/app/orders";
 import { getCurrentUser } from "@/server/session";
+import { mockPaymentsAllowed } from "@/server/env";
 import { ORDER_STATE_LABELS } from "@/domain/orders";
 import { formatZar } from "@/domain/pricing";
 
@@ -35,11 +36,19 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           </span>
         </div>
 
-        {order.status === "PENDING_PAYMENT" && (
-          <Link href={`/pay/mock?order=${order.id}&amount=${order.breakdown.totalCents}`} className="btn-raw mt-4 inline-flex">
-            Complete payment →
-          </Link>
-        )}
+        {(order.status === "PENDING_PAYMENT" || order.status === "FAILED") &&
+          (mockPaymentsAllowed() && order.status === "PENDING_PAYMENT" ? (
+            <Link href={`/pay/mock?order=${order.id}&amount=${order.breakdown.totalCents}`} className="btn-raw mt-4 inline-flex">
+              Complete payment →
+            </Link>
+          ) : (
+            <div className="mt-4">
+              <p className="text-sm text-muted">
+                Your payment wasn&apos;t completed, so you haven&apos;t been charged. Your cart is saved — head back to checkout to try again.
+              </p>
+              <Link href="/checkout" className="btn-raw mt-3 inline-flex">Back to checkout →</Link>
+            </div>
+          ))}
         {paid && !user && (
           <p className="mt-4 border-2 border-ink bg-volt/30 px-3 py-2 text-sm">
             Want to keep track of this order?{" "}
@@ -96,8 +105,18 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                 </li>
               ))}
             </ol>
-            {shipment?.trackingUrl && (
-              <Link href={shipment.trackingUrl} className="btn-raw mt-4 inline-flex">Track delivery →</Link>
+            {shipment?.trackingNumber && (
+              <div className="mt-4 border-t-2 border-ink pt-3">
+                <p className="text-sm">
+                  Shipped with {shipment.provider.toUpperCase()} · tracking{" "}
+                  <span className="font-mono font-bold">{shipment.trackingNumber}</span>
+                </p>
+                {shipment.trackingUrl && (
+                  <a href={shipment.trackingUrl} target="_blank" rel="noopener noreferrer" className="btn-raw mt-3 inline-flex">
+                    Track delivery →
+                  </a>
+                )}
+              </div>
             )}
           </div>
         </section>

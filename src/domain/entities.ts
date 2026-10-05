@@ -197,6 +197,9 @@ export interface Order {
   timeline: OrderTimelineEntry[];
   paymentId?: string;
   shipmentId?: string;
+  /** Cart this order came from; its ordered items are cleared on payment. */
+  cartId?: string;
+  cartItemIds?: string[];
   readonly createdAt: Iso;
   updatedAt: Iso;
 }

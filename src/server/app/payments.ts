@@ -108,6 +108,18 @@ export async function handlePaymentWebhook(
         await repo.adjustInventory(item.productId, item.colour, item.size, -item.quantity);
       }
 
+      // Remove the purchased items from the customer's cart (kept until now so
+      // a cancelled payment could be retried).
+      if (order.cartId && order.cartItemIds?.length) {
+        const cart = await repo.getCart(order.cartId);
+        if (cart) {
+          const bought = new Set(order.cartItemIds);
+          cart.items = cart.items.filter((i) => !bought.has(i.id));
+          cart.updatedAt = now;
+          await repo.saveCart(cart);
+        }
+      }
+
       await notifyOrder(order, "PAYMENT_CONFIRMED");
       await notifyOrder(order, "ORDER_RECEIVED");
       await repo.recordEvent({ id: newId("pay"), type: "PAYMENT_SUCCESS", at: now, props: { total: order.breakdown.totalCents } });

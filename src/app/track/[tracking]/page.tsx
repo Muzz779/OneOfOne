@@ -33,9 +33,14 @@ export default async function TrackPage({ params }: { params: Promise<{ tracking
           {shipment && <span className="badge-raw bg-ink text-paper">Delivery: {SHIP_LABEL[shipment.status] ?? shipment.status}</span>}
         </div>
         <p className="mt-4 text-sm text-muted">
-          Delivery via {shipment?.provider ?? "our courier"}. This tracking view is a
-          development stand-in for the PUDO tracking integration.
+          Delivery via {shipment?.provider?.toUpperCase() ?? "our courier"}. For live
+          courier updates, use the courier&apos;s tracking page.
         </p>
+        {shipment?.trackingUrl && (
+          <a href={shipment.trackingUrl} target="_blank" rel="noopener noreferrer" className="btn-raw mt-4 inline-flex">
+            Open courier tracking →
+          </a>
+        )}
       </div>
     </main>
   );

@@ -8,7 +8,7 @@
 
 import "server-only";
 import { getDelivery, getPayment, getRepo } from "@/server/container";
-import { siteUrl } from "@/server/env";
+import { mockPaymentsAllowed, siteUrl } from "@/server/env";
 import { getCurrentUser } from "@/server/session";
 import { badRequest, conflict, notFound } from "@/server/errors";
 import { formatOrderNumber, newId } from "@/domain/ids";
@@ -43,6 +43,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const repo = getRepo();
   const payment = getPayment();
   const delivery = getDelivery();
+
+  // §19/§53 — never let the mock gateway take "payments" on a live store.
+  if (payment.name === "yoco-mock" && !mockPaymentsAllowed()) {
+    throw conflict("Online payments aren't switched on yet. Please check back soon.");
+  }
 
   const { name, email, phone } = input.customer;
   if (!name?.trim()) throw badRequest("Please enter your name.");
@@ -95,6 +100,8 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     breakdown,
     status: "DRAFT",
     timeline: [{ state: "DRAFT", at: now }],
+    cartId: cart.id,
+    cartItemIds: lines.map((l) => l.cartItemId),
     createdAt: now,
     updatedAt: now,
   };
@@ -133,12 +140,8 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   order.paymentId = paymentRecord.id;
 
   await repo.createOrder(order);
-
-  // Empty the cart now that its contents are captured on the order, so a new
-  // order doesn't accumulate previously-ordered items.
-  cart.items = [];
-  cart.updatedAt = now;
-  await repo.saveCart(cart);
+  // The cart is NOT cleared here: if the customer cancels on the payment page
+  // they can retry. Ordered items are removed once payment is confirmed.
 
   await repo.recordEvent({
     id: newId("ord"),

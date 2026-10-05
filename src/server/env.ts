@@ -27,6 +27,27 @@ export function isYocoConfigured(): boolean {
   return Boolean(YOCO_SECRET_KEY && YOCO_WEBHOOK_SECRET);
 }
 
+/**
+ * The mock gateway marks orders paid without taking money, so it must never be
+ * reachable on a live store. Allowed in local dev; in production only when
+ * explicitly opted in (e.g. a private staging deploy).
+ */
+export function mockPaymentsAllowed(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.ONEOFONE_ALLOW_MOCK_PAYMENTS === "true"
+  );
+}
+
+// ── Email (Resend) ──────────────────────────────────────────────────────────
+export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
+/** e.g. "OneOfOne <orders@yourdomain.co.za>" — must be a Resend-verified domain. */
+export const EMAIL_FROM = process.env.ONEOFONE_EMAIL_FROM ?? "";
+
+export function isEmailConfigured(): boolean {
+  return Boolean(RESEND_API_KEY && EMAIL_FROM);
+}
+
 /** Absolute site origin for building payment return URLs. */
 export function siteUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL;

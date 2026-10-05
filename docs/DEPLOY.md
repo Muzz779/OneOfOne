@@ -82,6 +82,22 @@ Delivery (PUDO) and email/SMS notifications remain behind their service
 interfaces with dev mocks. Wire real providers in `src/server/container.ts`; the
 rest of the app doesn't change.
 
+## Go-live checklist (taking real orders)
+- [ ] **Supabase is active.** Free-tier projects pause after ~7 days without
+      traffic (the site then fails on upload/cart/checkout). A daily Vercel cron
+      hits `/api/health` to keep it awake — but for a real business, upgrade to
+      Supabase **Pro** so it can never pause. Check `/api/health` → `"db": true`.
+- [ ] **Real payments on.** `/api/health` must show `"payments": "yoco"`. In
+      production the mock gateway is disabled, so checkout refuses until Yoco
+      keys are set (this prevents free "paid" orders).
+- [ ] **Do one real test order** with a Yoco *test* key + Yoco test card, then
+      switch to live keys and do one small real order end-to-end.
+- [ ] **Customer emails on** (`"email": "resend"`) — needs your own domain.
+- [ ] **Shipping**: book each parcel in PUDO, then in admin set the order to
+      *Shipped* and paste the PUDO tracking number (required) + tracking link.
+- [ ] **Printer spec confirmed** in `src/config/printer.ts` (§58).
+- [ ] **Terms & privacy reviewed** — current pages are drafts.
+
 ## Custom domain & production checklist
 - Point your domain at Vercel; set `NEXT_PUBLIC_SUPPORT_WHATSAPP` to your real
   WhatsApp number to switch the support button live.

@@ -63,6 +63,7 @@ export async function updateOrderStatus(
   orderId: string,
   to: OrderState,
   note?: string,
+  tracking?: { trackingNumber?: string; trackingUrl?: string },
 ): Promise<Order> {
   const repo = getRepo();
   const delivery = getDelivery();
@@ -95,6 +96,8 @@ export async function updateOrderStatus(
       orderId: order.id,
       orderNumber: order.orderNumber,
       address: order.deliveryAddress,
+      trackingNumber: tracking?.trackingNumber,
+      trackingUrl: tracking?.trackingUrl,
     });
     const shipment: Shipment = {
       id: newId("ship"),
