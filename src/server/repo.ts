@@ -74,6 +74,8 @@ export interface Repo {
   savePayment(p: Payment): Promise<Payment>;
   isEventHandled(eventId: string): Promise<boolean>;
   markEventHandled(eventId: string): Promise<void>;
+  /** Atomically record an event id; false if it was already recorded (a lock). */
+  claimEvent(eventId: string): Promise<boolean>;
 
   // Production
   savePreflight(rec: PreflightResultRecord): Promise<PreflightResultRecord>;
@@ -347,6 +349,12 @@ export class InMemoryRepo implements Repo {
       this.state.handledEvents.push(eventId);
       this.persist();
     }
+  }
+  async claimEvent(eventId: string) {
+    if (this.state.handledEvents.includes(eventId)) return false;
+    this.state.handledEvents.push(eventId);
+    this.persist();
+    return true;
   }
 
   // Production

@@ -119,9 +119,10 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     amountCents: breakdown.totalCents,
     currency: "ZAR",
     idempotencyKey: order.id,
-    successUrl: `${base}/orders/${order.id}`,
+    customerEmail: email,
+    successUrl: `${base}/api/payments/return?order=${order.id}`,
     cancelUrl: `${base}/checkout`,
-    failureUrl: `${base}/orders/${order.id}`,
+    failureUrl: `${base}/api/payments/return?order=${order.id}`,
   });
   const paymentRecord: Payment = {
     id: newId("pay"),

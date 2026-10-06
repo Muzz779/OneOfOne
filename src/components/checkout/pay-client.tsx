@@ -33,7 +33,7 @@ export function PayClient({ orderId, amountCents }: { orderId: string; amountCen
         <span className="badge-raw bg-warn text-ink">Development payment · mock gateway</span>
         <h1 className="mt-4 font-display text-2xl font-bold">Confirm payment</h1>
         <p className="mt-1 text-muted">
-          This is a simulated hosted-payment page standing in for Yoco. It posts a
+          This is a simulated hosted-payment page standing in for Paystack/Yoco. It posts a
           real signed webhook to our server — no card is charged.
         </p>
         <p className="mt-4 flex items-baseline justify-between border-y-2 border-ink py-3">

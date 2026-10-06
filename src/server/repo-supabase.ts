@@ -171,6 +171,13 @@ export class SupabaseRepo implements Repo {
   async markEventHandled(eventId: string) {
     await db().from("handled_events").upsert({ event_id: eventId });
   }
+  async claimEvent(eventId: string) {
+    // The primary key makes this insert the lock: a second claim conflicts.
+    const { error } = await db().from("handled_events").insert({ event_id: eventId });
+    if (!error) return true;
+    if (error.code === "23505") return false;
+    throw new Error(`claimEvent failed: ${error.message}`);
+  }
 
   // Production
   async savePreflight(rec: PreflightResultRecord) {

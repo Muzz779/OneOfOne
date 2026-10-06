@@ -27,6 +27,15 @@ export function isYocoConfigured(): boolean {
   return Boolean(YOCO_SECRET_KEY && YOCO_WEBHOOK_SECRET);
 }
 
+// ── Paystack payments ───────────────────────────────────────────────────────
+// Paystack signs webhooks with the same secret key, so one key is enough.
+export const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
+
+/** True when a Paystack secret key is configured (preferred over Yoco). */
+export function isPaystackConfigured(): boolean {
+  return Boolean(PAYSTACK_SECRET_KEY);
+}
+
 /**
  * The mock gateway marks orders paid without taking money, so it must never be
  * reachable on a live store. Allowed in local dev; in production only when
@@ -37,6 +46,13 @@ export function mockPaymentsAllowed(): boolean {
     process.env.NODE_ENV !== "production" ||
     process.env.ONEOFONE_ALLOW_MOCK_PAYMENTS === "true"
   );
+}
+
+/** Which payment gateway checkout uses — the same rule as the container. */
+export function paymentMode(): "paystack" | "yoco" | "mock" | "disabled" {
+  if (isPaystackConfigured()) return "paystack";
+  if (isYocoConfigured()) return "yoco";
+  return mockPaymentsAllowed() ? "mock" : "disabled";
 }
 
 // ── Email (Resend) ──────────────────────────────────────────────────────────

@@ -68,7 +68,7 @@ export function CheckoutClient() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Checkout failed.");
-      // Yoco returns an absolute hosted-checkout URL; the mock returns a
+      // Paystack/Yoco return an absolute hosted-checkout URL; the mock returns a
       // relative /pay/mock path.
       if (/^https?:\/\//.test(data.redirectUrl)) {
         window.location.href = data.redirectUrl;

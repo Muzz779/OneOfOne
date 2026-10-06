@@ -1,10 +1,5 @@
 import { getRepo } from "@/server/container";
-import {
-  isEmailConfigured,
-  isSupabaseConfigured,
-  isYocoConfigured,
-  mockPaymentsAllowed,
-} from "@/server/env";
+import { isEmailConfigured, isSupabaseConfigured, paymentMode } from "@/server/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +15,7 @@ export async function GET() {
   } catch (err) {
     console.error("[health] database check failed", err);
   }
-  const payments = isYocoConfigured() ? "yoco" : mockPaymentsAllowed() ? "mock" : "disabled";
+  const payments = paymentMode();
   return Response.json(
     {
       ok: db,

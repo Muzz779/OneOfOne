@@ -9,6 +9,7 @@
 
 import "server-only";
 import { getPayment, getRepo } from "@/server/container";
+import type { ParsedWebhook } from "@/server/services/payment";
 import { newId } from "@/domain/ids";
 import { assertTransition } from "@/domain/orders";
 import { notifyOrder } from "./notify";
@@ -55,21 +56,48 @@ export async function handlePaymentWebhook(
   headers: Headers,
 ): Promise<WebhookOutcome> {
   const provider = getPayment();
-  const repo = getRepo();
 
   if (!provider.verifyWebhookSignature(rawBody, headers)) {
     return { ok: false, reason: "invalid_signature" };
   }
 
-  const event = provider.parseWebhook(rawBody);
-  if (!event.eventId) return { ok: false, reason: "missing_event_id" };
+  return applyPaymentEvent(provider.parseWebhook(rawBody));
+}
+
+/**
+ * Called when the customer lands back from the hosted payment page. Asks the
+ * provider directly (server-to-server, so it can be trusted) whether the
+ * payment succeeded, and applies it through the same path as a webhook. The
+ * redirect itself is never treated as proof of payment (§19).
+ */
+export async function reconcilePaymentOnReturn(orderId: string): Promise<WebhookOutcome> {
+  const provider = getPayment();
+  if (!provider.verifyPayment) return { ok: true, reason: "not_supported" };
+  const repo = getRepo();
+  const order = await repo.getOrder(orderId);
+  if (!order || order.status !== "PENDING_PAYMENT" || !order.paymentId) return { ok: true };
+  const payment = await repo.getPayment(order.paymentId);
+  if (!payment?.providerRef || payment.provider !== provider.name) return { ok: true };
+
+  const event = await provider.verifyPayment(payment.providerRef);
+  if (!event) return { ok: true, reason: "not_paid" };
+  return applyPaymentEvent({ ...event, orderId: event.orderId || order.id });
+}
+
+async function applyPaymentEvent(event: ParsedWebhook): Promise<WebhookOutcome> {
+  const repo = getRepo();
+  if (!event.eventId) {
+    // Events we don't act on (no id, not a payment result) are acknowledged so
+    // the provider doesn't keep retrying them.
+    return event.status === "PENDING" ? { ok: true, reason: "ignored" } : { ok: false, reason: "missing_event_id" };
+  }
 
   // Idempotency — a duplicate webhook is a no-op success (§19).
   if (await repo.isEventHandled(event.eventId)) {
     return { ok: true, duplicate: true };
   }
 
-  // Resolve the order (Yoco carries orderId in metadata; mock in the body),
+  // Resolve the order (Paystack/Yoco carry orderId in metadata; mock in the body),
   // then its payment. Fall back to the provider reference.
   let order = event.orderId ? await repo.getOrder(event.orderId) : undefined;
   let payment = order?.paymentId ? await repo.getPayment(order.paymentId) : undefined;
@@ -77,22 +105,31 @@ export async function handlePaymentWebhook(
     payment = await repo.getPaymentByProviderRef(event.providerRef);
     if (payment && !order) order = await repo.getOrder(payment.orderId);
   }
-  if (!payment || !order) return { ok: false, reason: "unknown_payment" };
+  if (!payment || !order) {
+    // Ack events that aren't payment results so the provider stops retrying.
+    return event.status === "PENDING" ? { ok: true, reason: "ignored" } : { ok: false, reason: "unknown_payment" };
+  }
 
   const now = new Date().toISOString();
 
   if (event.status === "SUCCEEDED") {
     // §40 — verify the amount server-side; never trust the reported total blindly.
-    if (event.amountCents !== order.breakdown.totalCents) {
+    const currencyOk = !event.currency || event.currency.toUpperCase() === payment.currency;
+    if (event.amountCents !== order.breakdown.totalCents || !currencyOk) {
       payment.status = "FAILED";
-      payment.events.push({ at: now, type: "amount_mismatch", note: `${event.amountCents} != ${order.breakdown.totalCents}` });
+      payment.events.push({
+        at: now,
+        type: "amount_mismatch",
+        note: `${event.amountCents} ${event.currency ?? ""} != ${order.breakdown.totalCents} ${payment.currency}`,
+      });
       await repo.savePayment(payment);
       await repo.markEventHandled(event.eventId);
       return { ok: false, reason: "amount_mismatch" };
     }
 
-    // Only advance if still awaiting payment (defends against races).
-    if (order.status === "PENDING_PAYMENT") {
+    // Only advance if still awaiting payment, and only once: the webhook and the
+    // customer's return can arrive together, so take an atomic per-order lock.
+    if (order.status === "PENDING_PAYMENT" && (await repo.claimEvent(`paid:${order.id}`))) {
       payment.status = "SUCCEEDED";
       payment.events.push({ at: now, type: "payment.succeeded" });
       await repo.savePayment(payment);

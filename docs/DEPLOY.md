@@ -51,14 +51,34 @@ It's idempotent — it only seeds if inventory is empty.
 ## 5. Verify
 - Visit `/` and `/products` — storefront renders.
 - `/studio` — upload an image (stored in the Supabase `originals` bucket).
-- Place an order through checkout → the mock payment page → `/orders/<id>` shows
+- Place an order through checkout → the payment page → `/orders/<id>` shows
   the production mockups; `/admin` (login) shows the order + downloadable
   production files from the private `production` bucket.
 - `/account/register` — creates a real Supabase Auth user; orders you place while
   signed in appear under `/account`.
 
-## Enable real Yoco payments
-The app ships with a mock gateway. To take real card payments with Yoco:
+## Enable real Paystack payments (recommended)
+No hardware, no setup or monthly fee. Customers can pay by card, Capitec Pay or
+instant EFT on Paystack's hosted page.
+1. Sign up free at [paystack.com](https://paystack.com) (South Africa).
+2. **Settings → API Keys & Webhooks**:
+   - Copy the **Test Secret Key** (`sk_test_...`).
+   - Set **Test Webhook URL** to `https://YOUR-DOMAIN/api/payments/webhook`.
+3. In Vercel env vars set `PAYSTACK_SECRET_KEY` (and `NEXT_PUBLIC_SITE_URL` to
+   your production URL). Redeploy. `/api/health` should show `"payments": "paystack"`.
+4. Place an order and pay with one of Paystack's **test cards** (listed in their
+   docs/dashboard). The order should land in admin as *Print ready*.
+5. To go live: complete Paystack's business activation, set the **Live Webhook
+   URL** to the same address, swap in the `sk_live_...` key, and redeploy.
+
+How it's confirmed (§19): Paystack calls `/api/payments/webhook` (HMAC-SHA512
+signature checked, duplicate-safe, amount + currency checked). When the customer
+is sent back, `/api/payments/return` also asks Paystack directly whether the
+payment went through, so a slow webhook never leaves a paid order stuck. Either
+path marks the order paid exactly once.
+
+## Enable real Yoco payments (alternative)
+Used only when Paystack isn't configured. To take real card payments with Yoco:
 1. Sign up at [yoco.com](https://www.yoco.com) and open **Developers** in the
    dashboard. Copy your **secret key** (start with the test key `sk_test_...`).
 2. **Register the webhook**: point it at `https://YOUR-DOMAIN/api/payments/webhook`.
@@ -87,11 +107,11 @@ rest of the app doesn't change.
       traffic (the site then fails on upload/cart/checkout). A daily Vercel cron
       hits `/api/health` to keep it awake — but for a real business, upgrade to
       Supabase **Pro** so it can never pause. Check `/api/health` → `"db": true`.
-- [ ] **Real payments on.** `/api/health` must show `"payments": "yoco"`. In
-      production the mock gateway is disabled, so checkout refuses until Yoco
-      keys are set (this prevents free "paid" orders).
-- [ ] **Do one real test order** with a Yoco *test* key + Yoco test card, then
-      switch to live keys and do one small real order end-to-end.
+- [ ] **Real payments on.** `/api/health` must show `"payments": "paystack"`
+      (or `"yoco"`). In production the mock gateway is disabled, so checkout
+      refuses until a payment key is set (this prevents free "paid" orders).
+- [ ] **Do one real test order** with a Paystack *test* key + test card, then
+      switch to the live key and do one small real order end-to-end.
 - [ ] **Customer emails on** (`"email": "resend"`) — needs your own domain.
 - [ ] **Shipping**: book each parcel in PUDO, then in admin set the order to
       *Shipped* and paste the PUDO tracking number (required) + tracking link.

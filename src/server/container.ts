@@ -2,14 +2,14 @@
  * Service container (CLAUDE.md §53, §57.5).
  *
  * Single wiring point for the repo + every integration behind its interface.
- * Swapping a mock for a real provider (Supabase, Yoco, an AI upscaler, PUDO,
+ * Swapping a mock for a real provider (Supabase, Paystack/Yoco, an AI upscaler, PUDO,
  * email/SMS) happens HERE — nothing else changes. Instances are cached on
  * globalThis so they survive Next.js dev hot-reload.
  */
 
 import "server-only";
 import { getActivePrinterSpec, type PrinterSpec } from "@/config/printer";
-import { isEmailConfigured, isSupabaseConfigured, isYocoConfigured } from "./env";
+import { isEmailConfigured, isSupabaseConfigured, paymentMode } from "./env";
 import { InMemoryRepo, type Repo } from "./repo";
 import { SupabaseRepo } from "./repo-supabase";
 import { LocalDiskStorage } from "./storage/local";
@@ -21,7 +21,12 @@ import {
   DevColorKeyRemover,
   type BackgroundRemovalService,
 } from "./services/background";
-import { MockYocoProvider, YocoProvider, type PaymentProvider } from "./services/payment";
+import {
+  MockYocoProvider,
+  PaystackProvider,
+  YocoProvider,
+  type PaymentProvider,
+} from "./services/payment";
 import { ManualPudoDelivery, type DeliveryService } from "./services/delivery";
 import {
   MockNotificationService,
@@ -60,10 +65,22 @@ function build(): Container {
     image: new SharpImageProcessor(),
     enhancer: new DevUpscaleEnhancer(),
     bgRemover: new DevColorKeyRemover(),
-    payment: isYocoConfigured() ? new YocoProvider() : new MockYocoProvider(),
+    payment: createPaymentProvider(),
     delivery: new ManualPudoDelivery(),
     notifier: isEmailConfigured() ? new ResendNotificationService() : new MockNotificationService(),
   };
+}
+
+function createPaymentProvider(): PaymentProvider {
+  switch (paymentMode()) {
+    case "paystack":
+      return new PaystackProvider();
+    case "yoco":
+      return new YocoProvider();
+    default:
+      // "disabled" still wires the mock so dev tooling works; checkout refuses it.
+      return new MockYocoProvider();
+  }
 }
 
 function container(): Container {
