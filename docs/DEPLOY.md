@@ -57,6 +57,22 @@ It's idempotent — it only seeds if inventory is empty.
 - `/account/register` — creates a real Supabase Auth user; orders you place while
   signed in appear under `/account`.
 
+## Take payments by bank transfer (works today, no business registration)
+Customers can pay straight into your own bank account. Nothing to sign up for.
+1. In Vercel env vars set `ONEOFONE_EFT_BANK`, `ONEOFONE_EFT_ACCOUNT_HOLDER`,
+   `ONEOFONE_EFT_ACCOUNT_NUMBER`, `ONEOFONE_EFT_BRANCH_CODE` (and optionally
+   `ONEOFONE_EFT_ACCOUNT_TYPE`, `ONEOFONE_PAYSHAP_ID`). Redeploy.
+   `/api/health` should show `"bankTransfer": true`.
+2. Checkout now offers **Bank transfer (EFT)**. The customer gets your details
+   and a unique reference (e.g. `PAY1042`) on their order page and by email.
+3. In **/admin**, the dashboard lists *Bank transfers to check*. When a payment
+   shows in your **banking app** (never trust a screenshot), open the order,
+   type the amount you received and press **Confirm payment received**. That
+   marks it paid, updates stock, emails the customer and makes the print files.
+4. Unpaid after the hold period? Set the order to *Cancelled* in admin.
+
+Card payments (below) can run alongside this — customers pick at checkout.
+
 ## Enable real Paystack payments (recommended)
 No hardware, no setup or monthly fee. Customers can pay by card, Capitec Pay or
 instant EFT on Paystack's hosted page.

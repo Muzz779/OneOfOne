@@ -55,6 +55,51 @@ export function paymentMode(): "paystack" | "yoco" | "mock" | "disabled" {
   return mockPaymentsAllowed() ? "mock" : "disabled";
 }
 
+// ── Bank transfer (EFT / PayShap) ──────────────────────────────────────────
+// Customers pay straight into the owner's bank account using the order
+// reference; the owner confirms receipt in /admin. Needs no payment gateway or
+// registered business. Shown to customers only on their own order page.
+export interface EftDetails {
+  readonly bankName: string;
+  readonly accountHolder: string;
+  readonly accountNumber: string;
+  readonly branchCode: string;
+  readonly accountType: string;
+  /** PayShap ShapID (usually a cellphone number), for instant payments. */
+  readonly payShapId: string;
+}
+
+export function eftDetails(): EftDetails {
+  return {
+    bankName: process.env.ONEOFONE_EFT_BANK ?? "",
+    accountHolder: process.env.ONEOFONE_EFT_ACCOUNT_HOLDER ?? "",
+    accountNumber: process.env.ONEOFONE_EFT_ACCOUNT_NUMBER ?? "",
+    branchCode: process.env.ONEOFONE_EFT_BRANCH_CODE ?? "",
+    accountType: process.env.ONEOFONE_EFT_ACCOUNT_TYPE ?? "",
+    payShapId: process.env.ONEOFONE_PAYSHAP_ID ?? "",
+  };
+}
+
+/** True when customers can be shown somewhere to pay by bank transfer. */
+export function isEftConfigured(): boolean {
+  const d = eftDetails();
+  const bank = Boolean(d.bankName && d.accountHolder && d.accountNumber && d.branchCode);
+  return bank || Boolean(d.payShapId && d.accountHolder);
+}
+
+/** How long an unpaid bank-transfer order is held before it may be cancelled. */
+export const EFT_HOLD_DAYS = Number(process.env.ONEOFONE_EFT_HOLD_DAYS ?? 3);
+
+export type PaymentMethodId = "card" | "eft";
+
+/** Payment methods checkout can offer right now. */
+export function availablePaymentMethods(): PaymentMethodId[] {
+  const methods: PaymentMethodId[] = [];
+  if (paymentMode() !== "disabled") methods.push("card");
+  if (isEftConfigured()) methods.push("eft");
+  return methods;
+}
+
 // ── Email (Resend) ──────────────────────────────────────────────────────────
 export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
 /** e.g. "OneOfOne <orders@yourdomain.co.za>" — must be a Resend-verified domain. */

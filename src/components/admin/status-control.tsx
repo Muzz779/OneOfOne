@@ -6,7 +6,9 @@ import { allowedTransitions, ORDER_STATE_LABELS, type OrderState } from "@/domai
 
 export function StatusControl({ orderId, current }: { orderId: string; current: OrderState }) {
   const router = useRouter();
-  const options = allowedTransitions(current);
+  // Payment is confirmed through its own control (gateway or bank transfer),
+  // never by picking "Paid" here.
+  const options = allowedTransitions(current).filter((s) => !(current === "PENDING_PAYMENT" && s === "PAID"));
   const [to, setTo] = useState<OrderState | "">(options[0] ?? "");
   const [note, setNote] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");

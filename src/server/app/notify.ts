@@ -8,12 +8,15 @@
 
 import "server-only";
 import { getNotifier, getRepo } from "@/server/container";
-import { siteUrl } from "@/server/env";
+import { EFT_HOLD_DAYS, eftDetails, siteUrl } from "@/server/env";
 import { newId } from "@/domain/ids";
+import { eftReference } from "@/domain/payments";
+import { formatZar } from "@/domain/pricing";
 import type { NotificationType, Order } from "@/domain/entities";
 
 /** Only these reach the customer's inbox; the rest are internal milestones. */
 const CUSTOMER_EMAILS: ReadonlySet<NotificationType> = new Set<NotificationType>([
+  "PAYMENT_INSTRUCTIONS",
   "ORDER_RECEIVED",
   "ARTWORK_ISSUE",
   "IN_PRODUCTION",
@@ -22,7 +25,35 @@ const CUSTOMER_EMAILS: ReadonlySet<NotificationType> = new Set<NotificationType>
   "REFUND_PROCESSED",
 ]);
 
+/** Bank details block for a bank-transfer order (only the parts configured). */
+export function eftInstructionsText(order: Order): string {
+  const d = eftDetails();
+  const lines = [
+    `Amount: ${formatZar(order.breakdown.totalCents)}`,
+    `Reference: ${eftReference(order.orderNumber)}  (please use this exactly)`,
+    "",
+  ];
+  if (d.bankName && d.accountNumber) {
+    lines.push(
+      `Bank: ${d.bankName}`,
+      `Account holder: ${d.accountHolder}`,
+      `Account number: ${d.accountNumber}`,
+      `Branch code: ${d.branchCode}`,
+    );
+    if (d.accountType) lines.push(`Account type: ${d.accountType}`);
+  }
+  if (d.payShapId) lines.push(`PayShap (instant): ${d.payShapId}`);
+  return lines.join("\n");
+}
+
 const COPY: Record<NotificationType, { subject: (o: Order) => string; body: (o: Order) => string }> = {
+  PAYMENT_INSTRUCTIONS: {
+    subject: (o) => `How to pay for order ${o.orderNumber}`,
+    body: (o) =>
+      `Hi ${o.customer.name},\n\nThanks for your order! Please pay by bank transfer using the details below. ` +
+      `We'll start printing as soon as the money reflects in our account and email you to confirm.\n\n` +
+      `${eftInstructionsText(o)}\n\nWe'll hold your order for ${EFT_HOLD_DAYS} days.`,
+  },
   ORDER_RECEIVED: {
     subject: (o) => `Order ${o.orderNumber} confirmed — thank you!`,
     body: (o) =>

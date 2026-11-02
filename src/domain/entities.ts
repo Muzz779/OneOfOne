@@ -312,6 +312,7 @@ export interface Refund {
 
 export type NotificationChannel = "EMAIL" | "SMS";
 export type NotificationType =
+  | "PAYMENT_INSTRUCTIONS"
   | "ORDER_RECEIVED"
   | "PAYMENT_CONFIRMED"
   | "ARTWORK_PROCESSING"

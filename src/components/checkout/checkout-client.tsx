@@ -7,10 +7,17 @@ import { formatZar } from "@/domain/pricing";
 import type { CartViewDTO } from "@/lib/dto";
 import type { DeliveryMethod } from "@/domain/pricing";
 
-export function CheckoutClient() {
+export interface PaymentOption {
+  readonly id: "card" | "eft";
+  readonly label: string;
+  readonly hint: string;
+}
+
+export function CheckoutClient({ paymentOptions }: { paymentOptions: PaymentOption[] }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartViewDTO | null>(null);
   const [method, setMethod] = useState<DeliveryMethod>("PUDO");
+  const [payWith, setPayWith] = useState<PaymentOption["id"] | undefined>(paymentOptions[0]?.id);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -51,6 +58,7 @@ export function CheckoutClient() {
       const body = {
         customer: { name: form.name, email: form.email, phone: form.phone },
         deliveryMethod: method,
+        paymentMethod: payWith,
         deliveryAddress:
           method === "PUDO"
             ? {
@@ -131,6 +139,35 @@ export function CheckoutClient() {
             </div>
           )}
         </fieldset>
+
+        <fieldset className="card-raw p-5">
+          <legend className="px-2 font-display text-lg font-bold">Payment</legend>
+          {paymentOptions.length === 0 ? (
+            <p className="text-sm font-semibold text-danger">Payments aren&apos;t switched on yet — please check back soon.</p>
+          ) : (
+            <div className="space-y-2" role="radiogroup" aria-label="Payment method">
+              {paymentOptions.map((opt) => (
+                <label
+                  key={opt.id}
+                  className={`flex cursor-pointer items-start gap-3 border-2 border-ink px-3 py-3 ${payWith === opt.id ? "bg-ink text-paper" : "bg-paper hover:bg-paper-2"}`}
+                >
+                  <input
+                    type="radio"
+                    name="payWith"
+                    value={opt.id}
+                    checked={payWith === opt.id}
+                    onChange={() => setPayWith(opt.id)}
+                    className="mt-1 accent-accent"
+                  />
+                  <span>
+                    <span className="block font-bold">{opt.label}</span>
+                    <span className={`block text-sm ${payWith === opt.id ? "text-paper/80" : "text-muted"}`}>{opt.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
       </div>
 
       <aside className="card-raw h-fit p-5">
@@ -144,8 +181,8 @@ export function CheckoutClient() {
           </div>
         </dl>
         {error && <p className="mt-3 border-2 border-danger bg-danger/10 px-2 py-1 text-sm font-semibold text-danger">{error}</p>}
-        <button type="submit" disabled={submitting} className="btn-raw mt-4 w-full disabled:bg-muted">
-          {submitting ? "Creating order…" : "Continue to payment →"}
+        <button type="submit" disabled={submitting || !payWith} className="btn-raw mt-4 w-full disabled:bg-muted">
+          {submitting ? "Creating order…" : payWith === "eft" ? "Place order →" : "Continue to payment →"}
         </button>
         <p className="mt-2 text-center font-mono text-[11px] text-muted">Payment is confirmed securely on our server.</p>
       </aside>

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireAdmin } from "@/server/session";
-import { analyticsSummary } from "@/server/app/admin";
+import { analyticsSummary, listAwaitingTransfers } from "@/server/app/admin";
 import { getRepo } from "@/server/container";
 import { formatZar } from "@/domain/pricing";
 import { ORDER_STATE_LABELS } from "@/domain/orders";
+import { EFT_HOLD_DAYS } from "@/server/env";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ export default async function AdminDashboard() {
   await requireAdmin();
   const summary = await analyticsSummary();
   const orders = (await getRepo().listOrders()).slice(0, 6);
+  const awaiting = await listAwaitingTransfers();
 
   return (
     <div className="space-y-6">
@@ -22,6 +24,36 @@ export default async function AdminDashboard() {
         <Stat label="Refund rate" value={`${summary.refundRatePercent.toFixed(1)}%`} />
         <Stat label="Uploads" value={`${summary.funnel.UPLOAD ?? 0}`} />
       </div>
+
+      {awaiting.length > 0 && (
+        <section className="border-2 border-ink bg-volt/30">
+          <h2 className="border-b-2 border-ink px-4 py-2 font-display font-bold">
+            Bank transfers to check ({awaiting.length})
+          </h2>
+          <p className="px-4 pt-2 text-xs text-muted">
+            Look for these references in your banking app, then open the order to confirm. Cancel orders still unpaid after {EFT_HOLD_DAYS} days.
+          </p>
+          <table className="w-full text-sm">
+            <tbody>
+              {awaiting.map(({ order: o, reference, ageDays: days }) => {
+                return (
+                  <tr key={o.id} className="border-b border-ink/20">
+                    <td className="px-4 py-2 font-mono font-bold">{reference}</td>
+                    <td className="px-4 py-2">{o.customer.name}</td>
+                    <td className={`px-4 py-2 text-xs ${days >= EFT_HOLD_DAYS ? "font-bold text-danger" : "text-muted"}`}>
+                      {days === 0 ? "today" : `${days}d ago`}
+                    </td>
+                    <td className="px-4 py-2 text-right font-semibold">{formatZar(o.breakdown.totalCents)}</td>
+                    <td className="px-4 py-2 text-right">
+                      <Link href={`/admin/orders/${o.id}`} className="font-semibold underline underline-offset-4">Check</Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <section className="border-2 border-ink bg-paper-2">
         <h2 className="border-b-2 border-ink px-4 py-2 font-display font-bold">Funnel</h2>

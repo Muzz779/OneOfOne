@@ -5,6 +5,8 @@ import { formatZar } from "@/domain/pricing";
 import { ORDER_STATE_LABELS } from "@/domain/orders";
 import { StatusControl } from "@/components/admin/status-control";
 import { RefundControl } from "@/components/admin/refund-control";
+import { ConfirmPaymentControl } from "@/components/admin/confirm-payment-control";
+import { EFT_PROVIDER } from "@/domain/payments";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,7 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ i
   }
   const { order, margin, payment, shipment, productionAssets, preflights, refunds } = detail!;
   const pendingRefund = refunds.find((r) => r.status === "REQUESTED");
+  const awaitingTransfer = order.status === "PENDING_PAYMENT" && payment?.provider === EFT_PROVIDER;
 
   return (
     <div className="space-y-5">
@@ -86,6 +89,17 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ i
         </div>
 
         <aside className="space-y-5">
+          {awaitingTransfer && (
+            <section className="border-2 border-ink bg-volt/30 p-4">
+              <h2 className="mb-2 font-display font-bold">Bank transfer</h2>
+              <ConfirmPaymentControl
+                orderId={order.id}
+                totalCents={order.breakdown.totalCents}
+                reference={payment?.providerRef ?? ""}
+              />
+            </section>
+          )}
+
           {/* Status control */}
           <section className="border-2 border-ink bg-paper-2 p-4">
             <h2 className="mb-2 font-display font-bold">Update status</h2>
@@ -119,7 +133,15 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ i
             {order.deliveryAddress && (
               <p className="mt-1 text-muted">{order.deliveryAddress.line1}, {order.deliveryAddress.city}, {order.deliveryAddress.province} {order.deliveryAddress.postalCode}</p>
             )}
-            <p className="mt-2 font-mono text-xs text-muted">Payment: {payment?.status ?? "—"} via {payment?.provider ?? "—"}</p>
+            <p className="mt-2 font-mono text-xs text-muted">
+              Payment: {payment?.status ?? "—"} via {payment?.provider === EFT_PROVIDER ? "bank transfer" : (payment?.provider ?? "—")}
+              {payment?.providerRef ? ` · ref ${payment.providerRef}` : ""}
+            </p>
+            {payment?.events.filter((e) => e.type === "eft.confirmed_by_owner").map((e, i) => (
+              <p key={i} className="font-mono text-xs text-muted">
+                Confirmed by you {new Date(e.at).toLocaleString()}{e.note ? ` — ${e.note}` : ""}
+              </p>
+            ))}
             {shipment && <p className="font-mono text-xs text-muted">Shipment: {shipment.status} {shipment.trackingNumber ? `· ${shipment.trackingNumber}` : ""}</p>}
           </section>
 

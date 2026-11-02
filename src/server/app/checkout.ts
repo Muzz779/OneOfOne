@@ -8,11 +8,19 @@
 
 import "server-only";
 import { getDelivery, getPayment, getRepo } from "@/server/container";
-import { mockPaymentsAllowed, siteUrl } from "@/server/env";
+import {
+  availablePaymentMethods,
+  isEftConfigured,
+  mockPaymentsAllowed,
+  siteUrl,
+  type PaymentMethodId,
+} from "@/server/env";
 import { getCurrentUser } from "@/server/session";
 import { badRequest, conflict, notFound } from "@/server/errors";
 import { formatOrderNumber, newId } from "@/domain/ids";
 import { assertTransition } from "@/domain/orders";
+import { EFT_PROVIDER, eftReference } from "@/domain/payments";
+import { notifyOrder } from "./notify";
 import type {
   CustomerDetails,
   DeliveryAddress,
@@ -28,6 +36,8 @@ export interface CreateOrderInput {
   readonly customer: CustomerDetails;
   readonly deliveryMethod: DeliveryMethod;
   readonly deliveryAddress?: DeliveryAddress;
+  /** "card" (hosted gateway) or "eft" (bank transfer confirmed by the owner). */
+  readonly paymentMethod?: PaymentMethodId;
 }
 
 export interface CreateOrderResult {
@@ -44,9 +54,17 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const payment = getPayment();
   const delivery = getDelivery();
 
+  const method: PaymentMethodId = input.paymentMethod ?? "card";
+  if (method === "eft" && !isEftConfigured()) {
+    throw badRequest("Bank transfer isn't available right now. Please choose another way to pay.");
+  }
   // §19/§53 — never let the mock gateway take "payments" on a live store.
-  if (payment.name === "yoco-mock" && !mockPaymentsAllowed()) {
-    throw conflict("Online payments aren't switched on yet. Please check back soon.");
+  if (method === "card" && payment.name === "yoco-mock" && !mockPaymentsAllowed()) {
+    throw conflict(
+      availablePaymentMethods().includes("eft")
+        ? "Card payments aren't switched on yet. Please choose bank transfer (EFT)."
+        : "Online payments aren't switched on yet. Please check back soon.",
+    );
   }
 
   const { name, email, phone } = input.customer;
@@ -112,28 +130,45 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   // Quote delivery (records the courier's fee intent).
   await delivery.quote({ method: input.deliveryMethod, address: input.deliveryAddress });
 
-  // Open payment with the provider (§19).
-  const base = siteUrl();
-  const checkout = await payment.createCheckout({
-    orderId: order.id,
-    amountCents: breakdown.totalCents,
-    currency: "ZAR",
-    idempotencyKey: order.id,
-    customerEmail: email,
-    successUrl: `${base}/api/payments/return?order=${order.id}`,
-    cancelUrl: `${base}/checkout`,
-    failureUrl: `${base}/api/payments/return?order=${order.id}`,
-  });
+  // Open payment (§19): a hosted gateway for cards, or bank-transfer details
+  // that the owner confirms in admin once the money is in the account.
+  let opened: { provider: string; providerRef: string; redirectUrl: string; event: string };
+  if (method === "eft") {
+    opened = {
+      provider: EFT_PROVIDER,
+      providerRef: eftReference(order.orderNumber),
+      redirectUrl: `/orders/${order.id}`,
+      event: "eft.awaiting_transfer",
+    };
+  } else {
+    const base = siteUrl();
+    const checkout = await payment.createCheckout({
+      orderId: order.id,
+      amountCents: breakdown.totalCents,
+      currency: "ZAR",
+      idempotencyKey: order.id,
+      customerEmail: email,
+      successUrl: `${base}/api/payments/return?order=${order.id}`,
+      cancelUrl: `${base}/checkout`,
+      failureUrl: `${base}/api/payments/return?order=${order.id}`,
+    });
+    opened = {
+      provider: payment.name,
+      providerRef: checkout.providerRef,
+      redirectUrl: checkout.redirectUrl,
+      event: "checkout.created",
+    };
+  }
   const paymentRecord: Payment = {
     id: newId("pay"),
     orderId: order.id,
-    provider: payment.name,
+    provider: opened.provider,
     amountCents: breakdown.totalCents,
     currency: "ZAR",
-    status: "CREATED",
-    providerRef: checkout.providerRef,
+    status: method === "eft" ? "PENDING" : "CREATED",
+    providerRef: opened.providerRef,
     idempotencyKey: order.id,
-    events: [{ at: now, type: "checkout.created" }],
+    events: [{ at: now, type: opened.event }],
     createdAt: now,
     updatedAt: now,
   };
@@ -141,8 +176,18 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   order.paymentId = paymentRecord.id;
 
   await repo.createOrder(order);
-  // The cart is NOT cleared here: if the customer cancels on the payment page
-  // they can retry. Ordered items are removed once payment is confirmed.
+  if (method === "eft") {
+    // The customer has committed to paying by transfer, so take the items out
+    // of the cart now (no accidental second order) and email the bank details.
+    const ordered = new Set(order.cartItemIds);
+    cart.items = cart.items.filter((i) => !ordered.has(i.id));
+    cart.updatedAt = now;
+    await repo.saveCart(cart);
+    await notifyOrder(order, "PAYMENT_INSTRUCTIONS");
+  }
+  // For cards the cart is NOT cleared here: if the customer cancels on the
+  // payment page they can retry. Ordered items are removed once payment is
+  // confirmed.
 
   await repo.recordEvent({
     id: newId("ord"),
@@ -151,5 +196,5 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     props: { total: breakdown.totalCents, items: items.length },
   });
 
-  return { order, redirectUrl: checkout.redirectUrl };
+  return { order, redirectUrl: opened.redirectUrl };
 }

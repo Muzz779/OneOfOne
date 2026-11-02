@@ -2,12 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCustomerOrder, mockupKey } from "@/server/app/orders";
 import { getCurrentUser } from "@/server/session";
-import { mockPaymentsAllowed } from "@/server/env";
+import { EFT_HOLD_DAYS, mockPaymentsAllowed } from "@/server/env";
+import { CopyValue } from "@/components/orders/copy-value";
 import { ORDER_STATE_LABELS } from "@/domain/orders";
 import { formatZar } from "@/domain/pricing";
 
 export const metadata = { title: "Your order — OneOfOne" };
 export const dynamic = "force-dynamic";
+
+const WHATSAPP = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP?.replace(/\D/g, "");
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,7 +20,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   } catch {
     notFound();
   }
-  const { order, mockups, shipment } = data!;
+  const { order, mockups, shipment, bankTransfer } = data!;
   const paid = order.status !== "DRAFT" && order.status !== "PENDING_PAYMENT" && order.status !== "FAILED";
   const user = await getCurrentUser();
 
@@ -28,7 +31,13 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           <div>
             <p className="badge-raw bg-volt text-ink">Order {order.orderNumber}</p>
             <h1 className="mt-3 font-display text-3xl font-bold">
-              {paid ? "Thank you! Order confirmed." : order.status === "FAILED" ? "Payment didn't go through" : "Complete your payment"}
+              {paid
+                ? "Thank you! Order confirmed."
+                : order.status === "FAILED"
+                  ? "Payment didn't go through"
+                  : bankTransfer
+                    ? "Almost done — pay by bank transfer"
+                    : "Complete your payment"}
             </h1>
           </div>
           <span className={`badge-raw ${paid ? "bg-ok text-white" : order.status === "FAILED" ? "bg-danger text-white" : "bg-warn text-ink"}`}>
@@ -36,7 +45,53 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           </span>
         </div>
 
-        {(order.status === "PENDING_PAYMENT" || order.status === "FAILED") &&
+        {bankTransfer && (
+          <div className="mt-5 grid gap-5 md:grid-cols-[minmax(0,1fr)_16rem]">
+            <div className="border-2 border-ink bg-paper p-4">
+              <h2 className="font-display text-lg font-bold">Our bank details</h2>
+              <div className="mt-2">
+                <CopyValue label="Amount" value={(order.breakdown.totalCents / 100).toFixed(2)} />
+                <CopyValue label="Reference — use exactly this" value={bankTransfer.reference} emphasis />
+                {bankTransfer.details.bankName && bankTransfer.details.accountNumber && (
+                  <>
+                    <CopyValue label="Bank" value={bankTransfer.details.bankName} />
+                    <CopyValue label="Account holder" value={bankTransfer.details.accountHolder} />
+                    <CopyValue label="Account number" value={bankTransfer.details.accountNumber} />
+                    <CopyValue label="Branch code" value={bankTransfer.details.branchCode} />
+                    {bankTransfer.details.accountType && (
+                      <CopyValue label="Account type" value={bankTransfer.details.accountType} />
+                    )}
+                  </>
+                )}
+                {bankTransfer.details.payShapId && (
+                  <CopyValue label="PayShap (instant) — ShapID" value={bankTransfer.details.payShapId} />
+                )}
+              </div>
+            </div>
+            <div className="space-y-3 text-sm">
+              <p>
+                Pay <strong>{formatZar(order.breakdown.totalCents)}</strong> from your banking app with the reference{" "}
+                <span className="font-mono font-bold">{bankTransfer.reference}</span> so we can match it to your order.
+              </p>
+              <p className="text-muted">
+                We start printing as soon as the money reflects — instant for PayShap and instant EFT, usually 1–2 working days for a normal EFT. We&apos;ll email {order.customer.email} when it&apos;s confirmed.
+              </p>
+              <p className="text-muted">We hold your order for {EFT_HOLD_DAYS} days.</p>
+              {WHATSAPP && (
+                <a
+                  href={`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(`Hi! I've paid for order ${order.orderNumber} (ref ${bankTransfer.reference}).`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-raw inline-flex"
+                >
+                  Tell us on WhatsApp →
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+        {!bankTransfer &&
+          (order.status === "PENDING_PAYMENT" || order.status === "FAILED") &&
           (mockPaymentsAllowed() && order.status === "PENDING_PAYMENT" ? (
             <Link href={`/pay/mock?order=${order.id}&amount=${order.breakdown.totalCents}`} className="btn-raw mt-4 inline-flex">
               Complete payment →

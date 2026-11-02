@@ -13,6 +13,7 @@ import { badRequest, notFound } from "@/server/errors";
 import { newId } from "@/domain/ids";
 import { assertTransition, isFrozen, type OrderState } from "@/domain/orders";
 import { getProductById } from "@/domain/products";
+import { EFT_PROVIDER } from "@/domain/payments";
 import {
   areaCm2FromMm,
   computeMargin,
@@ -71,6 +72,10 @@ export async function updateOrderStatus(
   if (!order) throw notFound("We couldn't find that order.");
 
   const from = order.status;
+  if (from === "PENDING_PAYMENT" && to === "PAID") {
+    // Marking paid by hand would skip stock, cart and production artwork.
+    throw badRequest("Use “Confirm payment received” on this order instead — it checks the amount and starts production.");
+  }
   assertTransition(from, to);
   const now = new Date().toISOString();
 
@@ -324,4 +329,30 @@ export async function analyticsSummary(): Promise<AnalyticsSummary> {
   const refundRatePercent = paid.length > 0 ? (refunded / paid.length) * 100 : 0;
 
   return { funnel, ordersPaid: paid.length, revenueCents, refundRatePercent };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface AwaitingTransfer {
+  readonly order: Order;
+  readonly reference: string;
+  readonly ageDays: number;
+}
+
+/** Bank-transfer orders waiting for the owner to check their account (oldest first). */
+export async function listAwaitingTransfers(): Promise<AwaitingTransfer[]> {
+  const repo = getRepo();
+  const now = Date.now();
+  const out: AwaitingTransfer[] = [];
+  for (const order of await repo.listOrders()) {
+    if (order.status !== "PENDING_PAYMENT" || !order.paymentId) continue;
+    const payment = await repo.getPayment(order.paymentId);
+    if (payment?.provider !== EFT_PROVIDER) continue;
+    out.push({
+      order,
+      reference: payment.providerRef ?? "",
+      ageDays: Math.floor((now - Date.parse(order.createdAt)) / DAY_MS),
+    });
+  }
+  return out.sort((a, b) => b.ageDays - a.ageDays);
 }

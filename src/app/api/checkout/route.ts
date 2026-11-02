@@ -5,6 +5,7 @@ import { clientKey, rateLimit } from "@/server/ratelimit";
 import { fail, json, readJson } from "@/server/http";
 import type { CustomerDetails, DeliveryAddress } from "@/domain/entities";
 import type { DeliveryMethod } from "@/domain/pricing";
+import type { PaymentMethodId } from "@/server/env";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ interface CheckoutBody {
   customer: CustomerDetails;
   deliveryMethod: DeliveryMethod;
   deliveryAddress?: DeliveryAddress;
+  paymentMethod?: PaymentMethodId;
 }
 
 // POST /api/checkout — create order + open payment (§18, §19, §41).
@@ -29,6 +31,7 @@ export async function POST(req: Request) {
       customer: body.customer,
       deliveryMethod: body.deliveryMethod,
       deliveryAddress: body.deliveryAddress,
+      paymentMethod: body.paymentMethod === "eft" ? "eft" : "card",
     });
     return json({ orderId: order.id, orderNumber: order.orderNumber, redirectUrl });
   } catch (e) {

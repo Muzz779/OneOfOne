@@ -10,6 +10,9 @@
 import "server-only";
 import { getPayment, getRepo } from "@/server/container";
 import type { ParsedWebhook } from "@/server/services/payment";
+import { badRequest, conflict, notFound } from "@/server/errors";
+import { EFT_PROVIDER } from "@/domain/payments";
+import { formatZar } from "@/domain/pricing";
 import { newId } from "@/domain/ids";
 import { assertTransition } from "@/domain/orders";
 import { notifyOrder } from "./notify";
@@ -82,6 +85,57 @@ export async function reconcilePaymentOnReturn(orderId: string): Promise<Webhook
   const event = await provider.verifyPayment(payment.providerRef);
   if (!event) return { ok: true, reason: "not_paid" };
   return applyPaymentEvent({ ...event, orderId: event.orderId || order.id });
+}
+
+/**
+ * The owner confirms a bank transfer has landed (from /admin). They type the
+ * amount they actually see in their bank account; it must match the order
+ * total exactly, then the payment runs through the same path as a verified
+ * gateway webhook — stock, cart, emails, production artwork (§15, §19, §21).
+ */
+export async function confirmBankTransfer(
+  orderId: string,
+  amountReceivedCents: number,
+  note?: string,
+): Promise<void> {
+  const repo = getRepo();
+  const order = await repo.getOrder(orderId);
+  if (!order) throw notFound("We couldn't find that order.");
+  const payment = order.paymentId ? await repo.getPayment(order.paymentId) : undefined;
+  if (!payment || payment.provider !== EFT_PROVIDER) {
+    throw badRequest("Only bank-transfer orders can be confirmed by hand.");
+  }
+  if (order.status !== "PENDING_PAYMENT") {
+    throw conflict("This order isn't waiting for payment any more.");
+  }
+  if (!Number.isInteger(amountReceivedCents) || amountReceivedCents !== order.breakdown.totalCents) {
+    throw badRequest(
+      `That doesn't match the order total of ${formatZar(order.breakdown.totalCents)}. ` +
+        "If the customer paid a different amount, contact them before confirming.",
+    );
+  }
+
+  const outcome = await applyPaymentEvent({
+    eventType: "eft.confirmed",
+    providerRef: payment.providerRef ?? "",
+    orderId: order.id,
+    status: "SUCCEEDED",
+    amountCents: amountReceivedCents,
+    currency: payment.currency,
+    eventId: `eft:${order.id}`,
+  });
+  if (!outcome.ok) throw conflict("Couldn't confirm this payment. Refresh and try again.");
+  if (outcome.duplicate) return;
+
+  const saved = await repo.getPayment(payment.id);
+  if (saved) {
+    saved.events.push({
+      at: new Date().toISOString(),
+      type: "eft.confirmed_by_owner",
+      note: note?.trim() ? note.trim().slice(0, 200) : undefined,
+    });
+    await repo.savePayment(saved);
+  }
 }
 
 async function applyPaymentEvent(event: ParsedWebhook): Promise<WebhookOutcome> {

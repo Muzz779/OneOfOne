@@ -1,5 +1,5 @@
 import { getRepo } from "@/server/container";
-import { isEmailConfigured, isSupabaseConfigured, paymentMode } from "@/server/env";
+import { isEftConfigured, isEmailConfigured, isSupabaseConfigured, paymentMode } from "@/server/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export async function GET() {
       db,
       storage: isSupabaseConfigured() ? "supabase" : "disk",
       payments,
+      bankTransfer: isEftConfigured(),
       email: isEmailConfigured() ? "resend" : "log-only",
       at: new Date().toISOString(),
     },

@@ -8,6 +8,8 @@
 import "server-only";
 import { getRepo, getStorage } from "@/server/container";
 import { notFound } from "@/server/errors";
+import { eftDetails, type EftDetails } from "@/server/env";
+import { EFT_PROVIDER } from "@/domain/payments";
 import type { Order, Shipment } from "@/domain/entities";
 
 export interface CustomerOrderView {
@@ -15,6 +17,8 @@ export interface CustomerOrderView {
   /** `${designId}:${side}` → signed mockup URL (when a mockup exists). */
   readonly mockups: Record<string, string>;
   readonly shipment?: Shipment;
+  /** Set while a bank-transfer order is waiting for payment. */
+  readonly bankTransfer?: { readonly reference: string; readonly details: EftDetails };
 }
 
 export function mockupKey(designId: string, side: string): string {
@@ -43,7 +47,15 @@ export async function getCustomerOrder(orderId: string): Promise<CustomerOrderVi
   }
 
   const shipment = order.shipmentId ? await repo.getShipment(order.shipmentId) : undefined;
-  return { order, mockups, shipment };
+
+  let bankTransfer: CustomerOrderView["bankTransfer"];
+  if (order.status === "PENDING_PAYMENT" && order.paymentId) {
+    const payment = await repo.getPayment(order.paymentId);
+    if (payment?.provider === EFT_PROVIDER && payment.providerRef) {
+      bankTransfer = { reference: payment.providerRef, details: eftDetails() };
+    }
+  }
+  return { order, mockups, shipment, bankTransfer };
 }
 
 export interface TrackingView {
