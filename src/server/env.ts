@@ -124,12 +124,32 @@ export const EFT_HOLD_DAYS = Number(process.env.ONEOFONE_EFT_HOLD_DAYS ?? 3);
 export type PaymentMethodId = "card" | "eft";
 
 // ── Email (Resend) ──────────────────────────────────────────────────────────
+// Two ways to send: Resend (needs your own verified domain) or plain SMTP —
+// e.g. a Gmail address with a Google "app password", which needs no domain.
 export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
-/** e.g. "OneOfOne <orders@yourdomain.co.za>" — must be a Resend-verified domain. */
+/**
+ * Sender, e.g. "OneOfOne <orders@yourdomain.co.za>". Required for Resend (must
+ * be on its verified domain); optional for SMTP, where it defaults to the
+ * SMTP login with the display name "OneOfOne".
+ */
 export const EMAIL_FROM = process.env.ONEOFONE_EMAIL_FROM ?? "";
+/** Where customer replies go (defaults to the sender). */
+export const EMAIL_REPLY_TO = process.env.ONEOFONE_EMAIL_REPLY_TO ?? "";
+
+export const SMTP_HOST = process.env.ONEOFONE_SMTP_HOST || "smtp.gmail.com";
+export const SMTP_PORT = Number(process.env.ONEOFONE_SMTP_PORT || 465);
+export const SMTP_USER = (process.env.ONEOFONE_SMTP_USER ?? "").trim();
+/** Google shows app passwords with spaces ("abcd efgh ..."); they don't count. */
+export const SMTP_PASSWORD = (process.env.ONEOFONE_SMTP_PASSWORD ?? "").replace(/\s+/g, "");
+
+export function emailMode(): "resend" | "smtp" | "log-only" {
+  if (RESEND_API_KEY && EMAIL_FROM) return "resend";
+  if (SMTP_USER && SMTP_PASSWORD) return "smtp";
+  return "log-only";
+}
 
 export function isEmailConfigured(): boolean {
-  return Boolean(RESEND_API_KEY && EMAIL_FROM);
+  return emailMode() !== "log-only";
 }
 
 /** Absolute site origin for building payment return URLs. */

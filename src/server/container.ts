@@ -9,7 +9,7 @@
 
 import "server-only";
 import { getActivePrinterSpec, type PrinterSpec } from "@/config/printer";
-import { isEmailConfigured, isSupabaseConfigured, paymentMode } from "./env";
+import { emailMode, isSupabaseConfigured, paymentMode } from "./env";
 import { InMemoryRepo, type Repo } from "./repo";
 import { SupabaseRepo } from "./repo-supabase";
 import { LocalDiskStorage } from "./storage/local";
@@ -31,6 +31,7 @@ import { ManualPudoDelivery, type DeliveryService } from "./services/delivery";
 import {
   MockNotificationService,
   ResendNotificationService,
+  SmtpNotificationService,
   type NotificationService,
 } from "./services/notifications";
 import { MockAuthService } from "./auth/mock";
@@ -67,7 +68,7 @@ function build(): Container {
     bgRemover: new DevColorKeyRemover(),
     payment: createPaymentProvider(),
     delivery: new ManualPudoDelivery(),
-    notifier: isEmailConfigured() ? new ResendNotificationService() : new MockNotificationService(),
+    notifier: createNotifier(),
   };
 }
 
@@ -98,5 +99,16 @@ export const getEnhancer = (): EnhancementService => container().enhancer;
 export const getBgRemover = (): BackgroundRemovalService => container().bgRemover;
 export const getPayment = (): PaymentProvider => container().payment;
 export const getDelivery = (): DeliveryService => container().delivery;
+function createNotifier(): NotificationService {
+  switch (emailMode()) {
+    case "resend":
+      return new ResendNotificationService();
+    case "smtp":
+      return new SmtpNotificationService();
+    default:
+      return new MockNotificationService();
+  }
+}
+
 export const getNotifier = (): NotificationService => container().notifier;
 export const getPrinterSpec = (): PrinterSpec => getActivePrinterSpec();

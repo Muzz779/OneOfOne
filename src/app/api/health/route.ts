@@ -1,5 +1,5 @@
 import { getRepo } from "@/server/container";
-import { adminAuthProblem, isEmailConfigured, isSupabaseConfigured, paymentMode } from "@/server/env";
+import { adminAuthProblem, emailMode, isSupabaseConfigured, paymentMode } from "@/server/env";
 import { isEftReady } from "@/server/app/settings";
 
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ export async function GET() {
       payments,
       bankTransfer,
       admin: adminAuthProblem() ? "not-set-up" : "ready",
-      email: isEmailConfigured() ? "resend" : "log-only",
+      email: emailMode(),
       at: new Date().toISOString(),
     },
     { status: db ? 200 : 503 },

@@ -118,8 +118,21 @@ Used only when Paystack isn't configured. To take real card payments with Yoco:
    webhook (signature-verified, idempotent) which marks the order paid and kicks
    off production. Test with a Yoco test card, then switch to live keys.
 
+## Customer emails (no domain needed)
+Order emails (how to pay, order confirmed, printing, shipped…) go out through
+your own Gmail:
+1. Turn on **2-Step Verification** on the Google account you'll send from.
+2. Go to https://myaccount.google.com/apppasswords, create one named
+   "OneOfOne" and copy the 16-letter password.
+3. In Vercel → Settings → Environment Variables add `ONEOFONE_SMTP_USER` (the
+   Gmail address) and `ONEOFONE_SMTP_PASSWORD` (the app password). Redeploy.
+4. `/api/health` shows `"email": "smtp"`. In `/admin` → **Payment details**,
+   use **Send test email** to confirm it arrives.
+Later, with your own domain, you can switch to Resend (`RESEND_API_KEY` +
+`ONEOFONE_EMAIL_FROM`) for better deliverability.
+
 ## Still mock (swap when ready)
-Delivery (PUDO) and email/SMS notifications remain behind their service
+Delivery (PUDO) and SMS notifications remain behind their service
 interfaces with dev mocks. Wire real providers in `src/server/container.ts`; the
 rest of the app doesn't change.
 
@@ -133,7 +146,8 @@ rest of the app doesn't change.
       refuses until a payment key is set (this prevents free "paid" orders).
 - [ ] **Do one real test order** with a Paystack *test* key + test card, then
       switch to the live key and do one small real order end-to-end.
-- [ ] **Customer emails on** (`"email": "resend"`) — needs your own domain.
+- [ ] **Customer emails on** (`"email": "smtp"` or `"resend"`) — see *Customer
+      emails* above; send yourself a test from `/admin` → Payment details.
 - [ ] **Shipping**: book each parcel in PUDO, then in admin set the order to
       *Shipped* and paste the PUDO tracking number (required) + tracking link.
 - [ ] **Printer spec confirmed** in `src/config/printer.ts` (§58).

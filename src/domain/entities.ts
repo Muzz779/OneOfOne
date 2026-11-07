@@ -331,6 +331,7 @@ export interface Notification {
   readonly orderId?: string;
   readonly subject: string;
   readonly body: string;
-  status: "QUEUED" | "SENT" | "FAILED";
+  /** LOGGED = no email service configured; written to the server log only. */
+  status: "QUEUED" | "SENT" | "FAILED" | "LOGGED";
   readonly createdAt: Iso;
 }
