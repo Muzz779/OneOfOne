@@ -1,5 +1,6 @@
 import { getRepo } from "@/server/container";
-import { isEftConfigured, isEmailConfigured, isSupabaseConfigured, paymentMode } from "@/server/env";
+import { adminAuthProblem, isEmailConfigured, isSupabaseConfigured, paymentMode } from "@/server/env";
+import { isEftReady } from "@/server/app/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,9 +10,11 @@ export const dynamic = "force-dynamic";
 // project from being paused for inactivity.
 export async function GET() {
   let db = false;
+  let bankTransfer = false;
   try {
     await getRepo().getPricingConfig();
     db = true;
+    bankTransfer = await isEftReady();
   } catch (err) {
     console.error("[health] database check failed", err);
   }
@@ -22,7 +25,8 @@ export async function GET() {
       db,
       storage: isSupabaseConfigured() ? "supabase" : "disk",
       payments,
-      bankTransfer: isEftConfigured(),
+      bankTransfer,
+      admin: adminAuthProblem() ? "not-set-up" : "ready",
       email: isEmailConfigured() ? "resend" : "log-only",
       at: new Date().toISOString(),
     },

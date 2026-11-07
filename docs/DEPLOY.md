@@ -30,8 +30,12 @@ openssl rand -hex 32   # ONEOFONE_PAYMENT_WEBHOOK_SECRET
 openssl rand -hex 16   # ONEOFONE_SETUP_TOKEN
 ```
 
-Set `ONEOFONE_ADMIN_PASSWORD` to your chosen admin password (login is
-`owner@oneofone.co.za`).
+Set `ONEOFONE_ADMIN_PASSWORD` to your chosen admin password (at least 8
+characters; login is `owner@oneofone.co.za`). **In production the owner
+portal refuses all logins until both `ONEOFONE_ADMIN_PASSWORD` (8+ chars) and
+`ONEOFONE_SIGNING_SECRET` (16+ chars) are set** — `/api/health` shows
+`"admin": "ready"` once they are. The portal is at `/admin` (also linked as
+*Owner* in the site footer); sessions last 8 hours.
 
 ## 3. Deploy to Vercel
 1. Push this repo to GitHub.
@@ -59,10 +63,11 @@ It's idempotent — it only seeds if inventory is empty.
 
 ## Take payments by bank transfer (works today, no business registration)
 Customers can pay straight into your own bank account. Nothing to sign up for.
-1. In Vercel env vars set `ONEOFONE_EFT_BANK`, `ONEOFONE_EFT_ACCOUNT_HOLDER`,
-   `ONEOFONE_EFT_ACCOUNT_NUMBER`, `ONEOFONE_EFT_BRANCH_CODE` (and optionally
-   `ONEOFONE_EFT_ACCOUNT_TYPE`, `ONEOFONE_PAYSHAP_ID`). Redeploy.
-   `/api/health` should show `"bankTransfer": true`.
+1. Sign in at `/admin` → **Payment details** and enter your bank, account
+   holder, account number and branch code (optionally account type, PayShap
+   ShapID and your WhatsApp number). Save — no redeploy needed.
+   `/api/health` should show `"bankTransfer": true`. (The `ONEOFONE_EFT_*` env
+   vars still work as a fallback until you save details in admin.)
 2. Checkout now offers **Bank transfer (EFT)**. The customer gets your details
    and a unique reference (e.g. `PAY1042`) on their order page and by email.
 3. In **/admin**, the dashboard lists *Bank transfers to check*. When a payment
@@ -135,7 +140,7 @@ rest of the app doesn't change.
 - [ ] **Terms & privacy reviewed** — current pages are drafts.
 
 ## Custom domain & production checklist
-- Point your domain at Vercel; set `NEXT_PUBLIC_SUPPORT_WHATSAPP` to your real
-  WhatsApp number to switch the support button live.
+- Point your domain at Vercel; add your WhatsApp number in `/admin` →
+  **Payment details** to switch the support button live.
 - Confirm the printer specification in `src/config/printer.ts` with your printer
   (§58) before taking real orders.

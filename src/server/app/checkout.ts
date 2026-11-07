@@ -8,13 +8,8 @@
 
 import "server-only";
 import { getDelivery, getPayment, getRepo } from "@/server/container";
-import {
-  availablePaymentMethods,
-  isEftConfigured,
-  mockPaymentsAllowed,
-  siteUrl,
-  type PaymentMethodId,
-} from "@/server/env";
+import { mockPaymentsAllowed, siteUrl, type PaymentMethodId } from "@/server/env";
+import { isEftReady } from "./settings";
 import { getCurrentUser } from "@/server/session";
 import { badRequest, conflict, notFound } from "@/server/errors";
 import { formatOrderNumber, newId } from "@/domain/ids";
@@ -55,13 +50,14 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const delivery = getDelivery();
 
   const method: PaymentMethodId = input.paymentMethod ?? "card";
-  if (method === "eft" && !isEftConfigured()) {
+  const eftReady = await isEftReady();
+  if (method === "eft" && !eftReady) {
     throw badRequest("Bank transfer isn't available right now. Please choose another way to pay.");
   }
   // §19/§53 — never let the mock gateway take "payments" on a live store.
   if (method === "card" && payment.name === "yoco-mock" && !mockPaymentsAllowed()) {
     throw conflict(
-      availablePaymentMethods().includes("eft")
+      eftReady
         ? "Card payments aren't switched on yet. Please choose bank transfer (EFT)."
         : "Online payments aren't switched on yet. Please check back soon.",
     );

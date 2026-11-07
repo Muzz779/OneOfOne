@@ -81,12 +81,13 @@ function SiteFooter() {
         <span className="font-mono">
           OneOfOne · Custom apparel, printed in South Africa
         </span>
-        <nav className="flex items-center gap-4 font-semibold">
+        <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 font-semibold">
           <Link href="/products" className="hover:underline underline-offset-4">Shop</Link>
           <Link href="/account" className="hover:underline underline-offset-4">Account</Link>
           <Link href="/support" className="hover:underline underline-offset-4">Support</Link>
           <Link href="/terms" className="hover:underline underline-offset-4">Terms</Link>
           <Link href="/privacy" className="hover:underline underline-offset-4">Privacy</Link>
+          <Link href="/admin" rel="nofollow" className="hover:underline underline-offset-4">Owner</Link>
         </nav>
       </div>
     </footer>

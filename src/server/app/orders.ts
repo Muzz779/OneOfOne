@@ -8,7 +8,8 @@
 import "server-only";
 import { getRepo, getStorage } from "@/server/container";
 import { notFound } from "@/server/errors";
-import { eftDetails, type EftDetails } from "@/server/env";
+import type { EftDetails } from "@/server/env";
+import { getEftDetails } from "./settings";
 import { EFT_PROVIDER } from "@/domain/payments";
 import type { Order, Shipment } from "@/domain/entities";
 
@@ -52,7 +53,7 @@ export async function getCustomerOrder(orderId: string): Promise<CustomerOrderVi
   if (order.status === "PENDING_PAYMENT" && order.paymentId) {
     const payment = await repo.getPayment(order.paymentId);
     if (payment?.provider === EFT_PROVIDER && payment.providerRef) {
-      bankTransfer = { reference: payment.providerRef, details: eftDetails() };
+      bankTransfer = { reference: payment.providerRef, details: await getEftDetails() };
     }
   }
   return { order, mockups, shipment, bankTransfer };

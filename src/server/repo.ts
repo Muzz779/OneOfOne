@@ -127,6 +127,9 @@ export interface Repo {
   // Config & admin
   getPricingConfig(): Promise<PricingConfig>;
   setPricingConfig(c: PricingConfig): Promise<PricingConfig>;
+  /** Small owner-editable settings (e.g. bank details), keyed by name. */
+  getSetting<T>(key: string): Promise<T | undefined>;
+  setSetting<T>(key: string, value: T): Promise<void>;
   getAdminByEmail(email: string): Promise<AdminUser | undefined>;
 
   // Analytics
@@ -150,6 +153,7 @@ interface DbState {
   notifications: Record<string, Notification>;
   events: AnalyticsEvent[];
   handledEvents: string[];
+  settings: Record<string, unknown>;
   pricingConfig: PricingConfig;
   admins: Record<string, AdminUser>;
   users: Record<string, User>;
@@ -196,6 +200,7 @@ function seedState(): DbState {
     notifications: {},
     events: [],
     handledEvents: [],
+    settings: {},
     pricingConfig: DEFAULT_PRICING_CONFIG,
     admins: { [admin.id]: admin },
     users: {},
@@ -480,6 +485,13 @@ export class InMemoryRepo implements Repo {
     this.state.pricingConfig = c;
     this.persist();
     return c;
+  }
+  async getSetting<T>(key: string) {
+    return this.state.settings[key] as T | undefined;
+  }
+  async setSetting<T>(key: string, value: T) {
+    this.state.settings[key] = value;
+    this.persist();
   }
   async getAdminByEmail(email: string) {
     return Object.values(this.state.admins).find(

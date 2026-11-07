@@ -8,7 +8,8 @@
 
 import "server-only";
 import { getNotifier, getRepo } from "@/server/container";
-import { EFT_HOLD_DAYS, eftDetails, siteUrl } from "@/server/env";
+import { EFT_HOLD_DAYS, siteUrl, type EftDetails } from "@/server/env";
+import { getEftDetails } from "./settings";
 import { newId } from "@/domain/ids";
 import { eftReference } from "@/domain/payments";
 import { formatZar } from "@/domain/pricing";
@@ -26,8 +27,7 @@ const CUSTOMER_EMAILS: ReadonlySet<NotificationType> = new Set<NotificationType>
 ]);
 
 /** Bank details block for a bank-transfer order (only the parts configured). */
-export function eftInstructionsText(order: Order): string {
-  const d = eftDetails();
+export function eftInstructionsText(order: Order, d: EftDetails): string {
   const lines = [
     `Amount: ${formatZar(order.breakdown.totalCents)}`,
     `Reference: ${eftReference(order.orderNumber)}  (please use this exactly)`,
@@ -46,13 +46,20 @@ export function eftInstructionsText(order: Order): string {
   return lines.join("\n");
 }
 
-const COPY: Record<NotificationType, { subject: (o: Order) => string; body: (o: Order) => string }> = {
+interface CopyContext {
+  readonly eft: EftDetails;
+}
+
+const COPY: Record<
+  NotificationType,
+  { subject: (o: Order) => string; body: (o: Order, ctx: CopyContext) => string }
+> = {
   PAYMENT_INSTRUCTIONS: {
     subject: (o) => `How to pay for order ${o.orderNumber}`,
-    body: (o) =>
+    body: (o, ctx) =>
       `Hi ${o.customer.name},\n\nThanks for your order! Please pay by bank transfer using the details below. ` +
       `We'll start printing as soon as the money reflects in our account and email you to confirm.\n\n` +
-      `${eftInstructionsText(o)}\n\nWe'll hold your order for ${EFT_HOLD_DAYS} days.`,
+      `${eftInstructionsText(o, ctx.eft)}\n\nWe'll hold your order for ${EFT_HOLD_DAYS} days.`,
   },
   ORDER_RECEIVED: {
     subject: (o) => `Order ${o.orderNumber} confirmed — thank you!`,
@@ -94,6 +101,15 @@ const COPY: Record<NotificationType, { subject: (o: Order) => string; body: (o: 
   },
 };
 
+const EMPTY_EFT: EftDetails = {
+  bankName: "",
+  accountHolder: "",
+  accountNumber: "",
+  branchCode: "",
+  accountType: "",
+  payShapId: "",
+};
+
 function withFooter(order: Order, body: string): string {
   return `${body}\n\nView your order: ${siteUrl()}/orders/${order.id}\n\nQuestions? Reply to this email or visit ${siteUrl()}/support\n\n— OneOfOne`;
 }
@@ -104,7 +120,8 @@ export async function notifyOrder(order: Order, type: NotificationType): Promise
   const notifier = getNotifier();
   const copy = COPY[type];
   const subject = copy.subject(order);
-  const body = withFooter(order, copy.body(order));
+  const ctx: CopyContext = { eft: type === "PAYMENT_INSTRUCTIONS" ? await getEftDetails() : EMPTY_EFT };
+  const body = withFooter(order, copy.body(order, ctx));
   const { status } = await notifier.send({
     to: order.customer.email,
     channel: "EMAIL",

@@ -1,27 +1,31 @@
 /**
  * Cookie-based session helpers (CLAUDE.md §40).
  *
- * Cart identity for anonymous shoppers, plus a mock admin session gate. Admin
- * auth here is a clearly-marked development stand-in (signed cookie + a password
- * from the environment); production would use Supabase Auth. The gate itself is
- * real — protected admin actions verify it server-side (§40).
+ * Cart identity for anonymous shoppers, plus the owner (admin) session: a
+ * password from the environment and an HMAC-signed, expiring cookie. Protected
+ * admin actions verify it server-side (§40). In production it refuses to work
+ * with the dev defaults (see adminAuthProblem).
  */
 
 import "server-only";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuth, getRepo } from "./container";
 import { forbidden } from "./errors";
+import { adminAuthProblem } from "./env";
 import type { AdminUser } from "@/domain/entities";
 import type { SessionUser } from "./auth/types";
 
 const CART_COOKIE = "oo_cart";
 const ADMIN_COOKIE = "oo_admin";
 
-const SECRET =
-  process.env.ONEOFONE_SIGNING_SECRET ?? "dev-only-insecure-signing-secret";
-const ADMIN_PASSWORD = process.env.ONEOFONE_ADMIN_PASSWORD ?? "letmein-dev";
+const ADMIN_SESSION_SECONDS = 60 * 60 * 8;
+
+// Dev defaults only ever apply outside production: adminAuthProblem() blocks
+// admin login and admin cookies in production until real values are set.
+const SECRET = process.env.ONEOFONE_SIGNING_SECRET || "dev-only-insecure-signing-secret";
+const ADMIN_PASSWORD = process.env.ONEOFONE_ADMIN_PASSWORD || "letmein-dev";
 
 export async function getCartId(): Promise<string | undefined> {
   return (await cookies()).get(CART_COOKIE)?.value;
@@ -36,8 +40,15 @@ export async function setCartId(id: string): Promise<void> {
   });
 }
 
-function signAdmin(email: string): string {
-  return createHmac("sha256", SECRET).update(`admin:${email}`).digest("hex").slice(0, 32);
+function signAdmin(email: string, expiresAt: number): string {
+  return createHmac("sha256", SECRET).update(`admin:${email}:${expiresAt}`).digest("hex");
+}
+
+function safeEqual(a: string, b: string): boolean {
+  // Hash first so differing lengths don't leak through timing.
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
 }
 
 export interface AdminLoginResult {
@@ -49,15 +60,22 @@ export async function adminLogin(
   email: string,
   password: string,
 ): Promise<AdminLoginResult> {
-  const admin = await getRepo().getAdminByEmail(email);
-  if (!admin || password !== ADMIN_PASSWORD) {
+  const problem = adminAuthProblem();
+  if (problem) return { ok: false, error: problem };
+  const admin = await getRepo().getAdminByEmail(String(email ?? "").trim().toLowerCase());
+  const passwordOk = safeEqual(String(password ?? ""), ADMIN_PASSWORD);
+  if (!admin || !passwordOk) {
     return { ok: false, error: "Incorrect email or password." };
   }
-  (await cookies()).set(ADMIN_COOKIE, `${email}.${signAdmin(email)}`, {
+  // The expiry is inside the signature, so a copied cookie stops working too.
+  const expiresAt = Math.floor(Date.now() / 1000) + ADMIN_SESSION_SECONDS;
+  const token = `${Buffer.from(admin.email).toString("base64url")}.${expiresAt}.${signAdmin(admin.email, expiresAt)}`;
+  (await cookies()).set(ADMIN_COOKIE, token, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 8,
+    maxAge: ADMIN_SESSION_SECONDS,
   });
   return { ok: true };
 }
@@ -67,19 +85,15 @@ export async function adminLogout(): Promise<void> {
 }
 
 export async function getAdmin(): Promise<AdminUser | undefined> {
+  if (adminAuthProblem()) return undefined;
   const raw = (await cookies()).get(ADMIN_COOKIE)?.value;
   if (!raw) return undefined;
-  const idx = raw.lastIndexOf(".");
-  if (idx < 0) return undefined;
-  const email = raw.slice(0, idx);
-  const sig = raw.slice(idx + 1);
-  const expected = signAdmin(email);
-  if (sig.length !== expected.length) return undefined;
-  try {
-    if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return undefined;
-  } catch {
-    return undefined;
-  }
+  const [emailB64, expRaw, sig] = raw.split(".");
+  if (!emailB64 || !expRaw || !sig) return undefined;
+  const expiresAt = Number(expRaw);
+  if (!Number.isInteger(expiresAt) || expiresAt < Date.now() / 1000) return undefined;
+  const email = Buffer.from(emailB64, "base64url").toString("utf8");
+  if (!safeEqual(sig, signAdmin(email, expiresAt))) return undefined;
   return getRepo().getAdminByEmail(email);
 }
 

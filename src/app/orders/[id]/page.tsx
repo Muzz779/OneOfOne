@@ -3,14 +3,13 @@ import { notFound } from "next/navigation";
 import { getCustomerOrder, mockupKey } from "@/server/app/orders";
 import { getCurrentUser } from "@/server/session";
 import { EFT_HOLD_DAYS, mockPaymentsAllowed } from "@/server/env";
+import { getSupportWhatsapp } from "@/server/app/settings";
 import { CopyValue } from "@/components/orders/copy-value";
 import { ORDER_STATE_LABELS } from "@/domain/orders";
 import { formatZar } from "@/domain/pricing";
 
 export const metadata = { title: "Your order — OneOfOne" };
 export const dynamic = "force-dynamic";
-
-const WHATSAPP = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP?.replace(/\D/g, "");
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,6 +22,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const { order, mockups, shipment, bankTransfer } = data!;
   const paid = order.status !== "DRAFT" && order.status !== "PENDING_PAYMENT" && order.status !== "FAILED";
   const user = await getCurrentUser();
+  const WHATSAPP = bankTransfer ? await getSupportWhatsapp() : "";
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">

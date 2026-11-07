@@ -18,6 +18,29 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
 }
 
+// ── Owner (admin) login ─────────────────────────────────────────────────────
+const MIN_ADMIN_PASSWORD_LENGTH = 8;
+const MIN_SIGNING_SECRET_LENGTH = 16;
+
+/**
+ * Why owner login can't be used yet, or undefined when it's ready. In
+ * production the dev defaults are never accepted — without a real password and
+ * signing secret anyone could log in or forge an admin cookie (§40).
+ */
+export function adminAuthProblem(): string | undefined {
+  if (process.env.NODE_ENV !== "production") return undefined;
+  const password = process.env.ONEOFONE_ADMIN_PASSWORD ?? "";
+  const secret = process.env.ONEOFONE_SIGNING_SECRET ?? "";
+  if (password.length < MIN_ADMIN_PASSWORD_LENGTH || secret.length < MIN_SIGNING_SECRET_LENGTH) {
+    return (
+      "Owner login isn't set up yet. In Vercel → Settings → Environment Variables, set " +
+      `ONEOFONE_ADMIN_PASSWORD (at least ${MIN_ADMIN_PASSWORD_LENGTH} characters) and ` +
+      `ONEOFONE_SIGNING_SECRET (a long random string, at least ${MIN_SIGNING_SECRET_LENGTH} characters), then redeploy.`
+    );
+  }
+  return undefined;
+}
+
 // ── Yoco payments ───────────────────────────────────────────────────────────
 export const YOCO_SECRET_KEY = process.env.YOCO_SECRET_KEY ?? "";
 export const YOCO_WEBHOOK_SECRET = process.env.YOCO_WEBHOOK_SECRET ?? "";
@@ -69,7 +92,11 @@ export interface EftDetails {
   readonly payShapId: string;
 }
 
-export function eftDetails(): EftDetails {
+/**
+ * Bank details from env — only a fallback. The owner normally enters them in
+ * /admin/settings (stored in the DB); see `src/server/app/settings.ts`.
+ */
+export function envEftDetails(): EftDetails {
   return {
     bankName: process.env.ONEOFONE_EFT_BANK ?? "",
     accountHolder: process.env.ONEOFONE_EFT_ACCOUNT_HOLDER ?? "",
@@ -80,9 +107,13 @@ export function eftDetails(): EftDetails {
   };
 }
 
-/** True when customers can be shown somewhere to pay by bank transfer. */
-export function isEftConfigured(): boolean {
-  const d = eftDetails();
+/** WhatsApp number from env (fallback for the admin setting). */
+export function envWhatsapp(): string {
+  return process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP ?? "";
+}
+
+/** True when these details give customers somewhere to pay by bank transfer. */
+export function isEftComplete(d: EftDetails): boolean {
   const bank = Boolean(d.bankName && d.accountHolder && d.accountNumber && d.branchCode);
   return bank || Boolean(d.payShapId && d.accountHolder);
 }
@@ -91,14 +122,6 @@ export function isEftConfigured(): boolean {
 export const EFT_HOLD_DAYS = Number(process.env.ONEOFONE_EFT_HOLD_DAYS ?? 3);
 
 export type PaymentMethodId = "card" | "eft";
-
-/** Payment methods checkout can offer right now. */
-export function availablePaymentMethods(): PaymentMethodId[] {
-  const methods: PaymentMethodId[] = [];
-  if (paymentMode() !== "disabled") methods.push("card");
-  if (isEftConfigured()) methods.push("eft");
-  return methods;
-}
 
 // ── Email (Resend) ──────────────────────────────────────────────────────────
 export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";

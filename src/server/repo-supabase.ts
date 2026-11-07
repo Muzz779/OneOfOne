@@ -326,6 +326,14 @@ export class SupabaseRepo implements Repo {
     await insert("pricing_config", { id: "default", data: c });
     return c;
   }
+  // Owner settings share the pricing_config key/value table (id "settings:<key>"),
+  // so no schema migration is needed.
+  async getSetting<T>(key: string) {
+    return readOne<T>("pricing_config", "id", `settings:${key}`);
+  }
+  async setSetting<T>(key: string, value: T) {
+    await insert("pricing_config", { id: `settings:${key}`, data: value });
+  }
   async getAdminByEmail(email: string) {
     return readOne<AdminUser>("admins", "email", email.toLowerCase());
   }

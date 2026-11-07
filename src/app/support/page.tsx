@@ -5,11 +5,14 @@ export const metadata: Metadata = {
   description: "Get help with your OneOfOne order — WhatsApp and email support.",
 };
 
-// Configure a real number to switch the WhatsApp button on (digits only, incl.
-// country code, e.g. 27821234567). Until then we show an honest "coming soon".
-const WHATSAPP = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP?.replace(/\D/g, "");
+import { getSupportWhatsapp } from "@/server/app/settings";
 
-export default function SupportPage() {
+// The owner sets the WhatsApp number in /admin/settings (env fallback). Until
+// then we show an honest "coming soon".
+export const dynamic = "force-dynamic";
+
+export default async function SupportPage() {
+  const WHATSAPP = await getSupportWhatsapp();
   return (
     <main className="mx-auto max-w-2xl px-4 py-12">
       <p className="badge-raw bg-volt text-ink">We&apos;re here to help</p>

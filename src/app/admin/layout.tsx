@@ -10,6 +10,7 @@ const NAV = [
   { href: "/admin/production", label: "Production" },
   { href: "/admin/inventory", label: "Inventory" },
   { href: "/admin/pricing", label: "Pricing" },
+  { href: "/admin/settings", label: "Payment details" },
 ];
 
 // Admin views relax the bold styling toward higher density (§34B exception),
